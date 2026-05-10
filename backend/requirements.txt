@@ -1,0 +1,13 @@
+fastapi                   # framework
+uvicorn[standard]         # web server for FastAPI code.
+sqlalchemy                # orm
+alembic                   # version control for your database.
+psycopg2-binary           # connector for postgreSQL.
+pydantic-settings         # handles app configuration.
+python-jose[cryptography] # JWT security.
+passlib[bcrypt]           # library for hashing passwords.
+bcrypt==4.0.1             # CRITICAL: pinning version to fix Passlib compatibility.
+python-multipart          # allows FastAPI to understand form data.
+python-dotenv             # read secrets from .env.
+pydantic[email]           # email validation logic.
+email-validator           # required by pydantic[email].

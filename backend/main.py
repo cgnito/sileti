@@ -1,0 +1,13 @@
+from fastapi import FastAPI
+from routes import orgs_router, auth_router, users_router 
+
+app = FastAPI(title="Kọ́ API")
+
+# Connect routers
+app.include_router(orgs_router)
+app.include_router(auth_router)
+app.include_router(users_router)
+
+@app.get("/")
+async def root():
+    return {"message": "Welcome to Kọ́ API", "status": "active"}
