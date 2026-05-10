@@ -1,8 +1,8 @@
 # Python
-__pycache__/
-venv/
+**/__pycache__/
+backend/venv/
 *.py[cod]
-.env
+backend/.env
 
 # Node
 node_modules/
