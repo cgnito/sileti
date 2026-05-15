@@ -1,7 +1,7 @@
 from uuid import UUID
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from sqlalchemy.orm import Session
-
+import logging
 
 import models
 import schemas
@@ -9,21 +9,36 @@ import utils
 import security
 from database import get_db
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/orgs", tags=["Organizations"])
 
+
+# BACKGROUND TASK: Send Verification Email
+def send_verification_email_task(email: str, token: str):
+    """
+    Background task to send verification email.
+    Wrapped in try/except to prevent crashes if email fails.
+    """
+    try:
+        utils.send_verification_email(email, token)
+        logger.info(f"Verification email sent successfully to {email}")
+    except Exception as e:
+        logger.error(f"Failed to send verification email to {email}: {str(e)}")
 
 
 # REGISTER SCHOOL (PUBLIC ENDPOINT)
 @router.post("", status_code=status.HTTP_201_CREATED)
 def register_school(
-    org_input: schemas.OrgCreate, 
+    org_input: schemas.OrgCreate,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db)
 ): 
     #check if the Admin's email is already registered anywhere in the system
     if db.query(models.User).filter(models.User.email == org_input.admin_email).first():
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, 
-            detail="Email already registered"
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Unable to complete registration with this email."
         )
 
     #clean and determine the short code
@@ -60,9 +75,9 @@ def register_school(
     db.add(new_admin)
     db.commit()  
 
-    #generate token and send onboarding verification email
+    # Generate token and send onboarding verification email via background task
     token = security.create_verification_token(new_admin.email)
-    utils.send_verification_email(new_admin.email, token)
+    background_tasks.add_task(send_verification_email_task, new_admin.email, token)
 
     return {"message": "Registration successful! Please verify your email via the link sent."}
 

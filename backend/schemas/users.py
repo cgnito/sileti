@@ -23,6 +23,15 @@ class SetPassword(BaseModel):
     token: str
     new_password: str = Field(..., min_length=8)
 
+class ResendEmailRequest(BaseModel):
+    """Request model for resending verification or invitation emails"""
+    email: EmailStr
+
+    @field_validator('email')
+    @classmethod
+    def clean_email(cls, v: str) -> str:
+        return utils.sanitize_email(v)
+
 class UserResponse(BaseModel):
     id: UUID
     full_name: str

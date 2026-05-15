@@ -38,18 +38,21 @@ def create_verification_token(email: str):
 def create_access_token(data: dict, expires_delta: timedelta = None):
     to_encode = data.copy()
     expire = datetime.now(timezone.utc) + (expires_delta or timedelta(minutes=30))
-    to_encode.update({"exp": expire})
+    to_encode.update({"exp": expire, "purpose": "access"})
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
-def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
+
+def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db, use_cache=False)):
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         email: str = payload.get("sub")
+        if email is None or payload.get("purpose") != "access":
+            raise HTTPException(status_code=401, detail="Invalid credentials")
     except JWTError:
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
     user = db.query(models.User).filter(models.User.email == email).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
+    if not user or not user.is_active:
+        raise HTTPException(status_code=401, detail="Invalid credentials")
     return user
 
 

@@ -1,13 +1,16 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from jose import JWTError, jwt
-
+import logging
 
 import models
 import security
-import schemas  
+import schemas
+import utils
 from database import get_db
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["Authentication"])
 
@@ -62,17 +65,23 @@ def verify_email(
             )
     except JWTError:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, 
-            detail="Token has expired or is invalid"
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired token"
         )
 
     user = db.query(models.User).filter(models.User.email == email).first()
-    if not user: 
+    if not user:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, 
-            detail="User not found"
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired token"
         )
-    
+
+    if user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This verification link has already been used."
+        )
+
     # Activate user account
     user.is_active = True
     db.commit()
@@ -89,3 +98,51 @@ def read_current_user(
     Highly necessary for frontend dashboard routing and user-state initialization.
     """
     return current_user
+
+
+# BACKGROUND TASK: Send Verification Email
+def send_verification_email_task(email: str, token: str):
+    """
+    Background task to send verification email.
+    Wrapped in try/except to prevent crashes if email fails.
+    """
+    try:
+        utils.send_verification_email(email, token)
+        logger.info(f"Verification email sent successfully to {email}")
+    except Exception as e:
+        logger.error(f"Failed to send verification email to {email}: {str(e)}")
+
+
+# RESEND VERIFICATION EMAIL (PUBLIC)
+@router.post("/resend-verification")
+def resend_verification_email(
+    email_data: schemas.ResendEmailRequest,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db)
+):
+    """
+    Resend verification email to a user who hasn't verified their account.
+    Only sends if user exists and is_active is False.
+    Uses BackgroundTasks so the response returns immediately without waiting for email send.
+    """
+    user = db.query(models.User).filter(models.User.email == email_data.email).first()
+    
+    if not user:
+        # Don't reveal whether email exists (security best practice)
+        return {"message": "If this email is registered, a verification link has been sent."}
+    
+    # Only allow resend if account hasn't been verified yet
+    if user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This account is already verified. Please log in."
+        )
+    
+    # Generate a fresh verification token
+    token = security.create_verification_token(user.email)
+    
+    # Add email sending to background tasks - request returns immediately
+    background_tasks.add_task(send_verification_email_task, user.email, token)
+    
+    # Return success immediately without waiting for email
+    return {"message": "If this email is registered, a verification link has been sent."}

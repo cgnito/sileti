@@ -1,8 +1,8 @@
-"""initial_schema
+"""initial graduation and student fix
 
-Revision ID: a691922ece75
+Revision ID: b0e454b8c525
 Revises: 
-Create Date: 2026-04-29 22:43:59.644040
+Create Date: 2026-05-15 02:04:50.033695
 
 """
 from typing import Sequence, Union
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = 'a691922ece75'
+revision: str = 'b0e454b8c525'
 down_revision: Union[str, Sequence[str], None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
@@ -85,12 +85,14 @@ def upgrade() -> None:
     op.create_table('students',
     sa.Column('id', sa.UUID(), nullable=False),
     sa.Column('org_id', sa.UUID(), nullable=False),
-    sa.Column('class_id', sa.UUID(), nullable=False),
-    sa.Column('ko_id', sa.String(length=20), nullable=False),
+    sa.Column('class_id', sa.UUID(), nullable=True),
+    sa.Column('ko_id', sa.String(length=30), nullable=False),
+    sa.Column('serial_number', sa.Integer(), nullable=False),
+    sa.Column('admission_year', sa.Integer(), nullable=False),
     sa.Column('first_name', sa.String(length=100), nullable=False),
     sa.Column('last_name', sa.String(length=100), nullable=False),
     sa.Column('date_of_birth', sa.Date(), nullable=True),
-    sa.Column('status', sa.Enum('ACTIVE', 'PROMOTED', 'GRADUATED', 'WITHDRAWN', name='studentstatus'), nullable=True),
+    sa.Column('status', sa.Enum('ACTIVE', 'GRADUATED', 'WITHDRAWN', name='studentstatus'), nullable=True),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=True),
     sa.ForeignKeyConstraint(['class_id'], ['classes.id'], ),
     sa.ForeignKeyConstraint(['org_id'], ['organizations.id'], ),

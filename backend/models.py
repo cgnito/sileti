@@ -56,7 +56,6 @@ class User(Base):
 
 class StudentStatus(str, enum.Enum):
     ACTIVE = "active"
-    PROMOTED = "promoted"
     GRADUATED = "graduated"
     WITHDRAWN = "withdrawn"
 
@@ -85,9 +84,15 @@ class Student(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     org_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=False)
-    class_id = Column(UUID(as_uuid=True), ForeignKey("classes.id"), nullable=False)
+    class_id = Column(UUID(as_uuid=True), ForeignKey("classes.id"), nullable=True)
     
-    ko_id = Column(String(20), unique=True, nullable=False, index=True)
+    # The human-readable ID: e.g., "CHS/2026/0001"
+    ko_id = Column(String(30), unique=True, nullable=False, index=True)
+    
+    # helpers columns for id generation
+    serial_number = Column(Integer, nullable=False) # e.g., 1
+    admission_year = Column(Integer, nullable=False) # e.g., 2026
+    
     first_name = Column(String(100), nullable=False)
     last_name = Column(String(100), nullable=False)
     date_of_birth = Column(Date, nullable=True)
@@ -95,10 +100,10 @@ class Student(Base):
     status = Column(Enum(StudentStatus), default=StudentStatus.ACTIVE)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
-    #relationship
+    # Relationships
     school_class = relationship("SchoolClass", back_populates="students")
-    #reference the table variable directly or by name string
     parents = relationship("Parent", secondary=student_parents, back_populates="students")
+
 
 class Parent(Base):
     __tablename__ = "parents"
