@@ -96,6 +96,9 @@ class Student(Base):
     first_name = Column(String(100), nullable=False)
     last_name = Column(String(100), nullable=False)
     date_of_birth = Column(Date, nullable=True)
+
+    # Optional parent email storage (falls back to an auto-generated variant if empty)
+    parent_email = Column(String(255), nullable=True)
     
     status = Column(Enum(StudentStatus), default=StudentStatus.ACTIVE)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
@@ -145,6 +148,7 @@ class FeeLineItem(Base):
     
     name = Column(String(255), nullable=False)  # e.g., "Tuition"
     amount = Column(Numeric(12, 2), nullable=False) # Precise financial decimal
+    is_compulsory = Column(Boolean, default=True, nullable=False)
 
     #relationship
     template = relationship("FeeTemplate", back_populates="line_items")
@@ -164,7 +168,8 @@ class Invoice(Base):
     student_id = Column(UUID(as_uuid=True), ForeignKey("students.id"), nullable=False)
     
     #to filter exports by Term/Session easily
-    session = Column(String(20), nullable=False) # e.g., "2025/2026"
+    #the session and term how do we get that since we do not put it in our fee template schemas
+    session = Column(String(20), nullable=False) # e.g., "2025/2026" 
     term = Column(String(20), nullable=False)    # e.g., "First Term"
     
     total_amount = Column(Numeric(12, 2), nullable=False)
@@ -178,7 +183,8 @@ class Invoice(Base):
     student = relationship("Student")
     #this links to the snapshot of items
     items = relationship("InvoiceDetail", back_populates="invoice", cascade="all, delete-orphan")
-    transactions = relationship("Transaction", back_populates="invoice")
+    # Bidirectional tracking relationship for the payment ledger log array
+    transactions = relationship("Transaction", back_populates="invoice", cascade="all, delete-orphan")
 
 
 class InvoiceDetail(Base):

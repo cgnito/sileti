@@ -138,3 +138,28 @@ Access: Chidi (Bursar) can now log in. Because his role is BURSAR, your code wil
 1.  **Multi-tenancy:** Review all repository patterns to ensure `org_id` is always present in the SQL `WHERE` clause.
 2.  **Constraints:** Verify SQL `CHECK` constraints on all amount columns to prevent negative values.
 3.  **Audit Logs:** Ensure every manual adjustment to an invoice is recorded in the `audit_logs` table with the user ID and timestamp.
+
+
+
+### Visual Identity (The "Chalk" Aesthetic)
+Follow these hex codes and settings exactly as defined in the configuration images:
+
+### Core Color Palette
+- **Primary:** `#a67c52` (Chalk Brown/Gold) - Use for Primary Buttons and accents.
+- **Background:** `#f5f1e6` (Off-white/Cream) - Use for the main page background.
+- **Foreground/Text:** `#4a3f35` (Dark Umber) - Use for primary text.
+- **Secondary:** `#e2d8c3` | **Secondary Foreground:** `#5c4d3f`
+- **Muted:** `#ece5d8` | **Muted Foreground:** `#7d6b56`
+- **Accent:** `#d4c8aa` | **Accent Foreground:** `#4a3f35`
+- **Card:** `#fffcf5` | **Card Foreground:** `#4a3f35`
+- **Destructive:** `#b54a35`
+
+### Typography (Tailwind Config)
+- **Font Sans (Headings):** 'Libre Baskerville', serif.
+- **Font Serif (Body):** 'Lora', serif.
+- **Font Mono:** 'IBM Plex Mono', monospace.
+- **STYLING:** Use strictly lowercase for all headings and UI labels to maintain the minimalist boutique brand feel.
+
+### UI Geometry
+- **Radius:** `0.25rem` (Sharp, professional corners).
+- **Shadows:** X: 0px, Y: 1px, Blur: 2px, Spread: 0px, Color: `#0000000d`.

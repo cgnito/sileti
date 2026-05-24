@@ -2,6 +2,19 @@ from .orgs import OrgCreate, OrgResponse, EmailVerification, OrgUpdate
 from .users import UserCreate, UserResponse, SetPassword, UserUpdate, ResendEmailRequest
 from .classes import ClassCreate, ClassResponse, ClassUpdate
 from .students import StudentCreate, StudentResponse, StudentUpdate
+from .fees import (
+    FeeLineItemBase,
+    FeeLineItemCreate,
+    FeeLineItemResponse,
+    FeeTemplateBase,
+    FeeTemplateCreate,
+    FeeTemplateResponse,
+    OptionalAllocation,
+    InvoiceGenerationRequest,
+    AddOptionalItemRequest,
+    InvoiceDetailResponse,
+    InvoiceResponse
+)
 
 __all__ = [
     "OrgCreate",
@@ -18,5 +31,16 @@ __all__ = [
     "ClassUpdate",
     "StudentCreate",
     "StudentResponse",
-    "StudentUpdate"
+    "StudentUpdate",
+    "FeeLineItemBase",
+    "FeeLineItemCreate",
+    "FeeLineItemResponse",
+    "FeeTemplateBase",
+    "FeeTemplateCreate",
+    "FeeTemplateResponse",
+    "OptionalAllocation",
+    "InvoiceGenerationRequest",
+    "AddOptionalItemRequest",
+    "InvoiceResponse",
+    "InvoiceDetailResponse"
 ]
