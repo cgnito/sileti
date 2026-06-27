@@ -1,6 +1,6 @@
-# Kọ́ Platform: Comprehensive Implementation Roadmap (v1.1)
+# ṣilẹti Platform: Comprehensive Implementation Roadmap (v1.1)
 
-This document serves as the master step-by-step guide for building Kọ́, a professional multi-tenant fintech solution for African schools. The plan follows a vertical-slice approach to ensure functional milestones at every stage.
+This document serves as the master step-by-step guide for building ṣilẹti, a professional multi-tenant fintech solution for African schools. The plan follows a vertical-slice approach to ensure functional milestones at every stage.
 
 ---
 
@@ -67,12 +67,12 @@ Access: Chidi (Bursar) can now log in. Because his role is BURSAR, your code wil
 1.  **Student and Parent Models:**
     * Add `Student` table with `status` enum (ACTIVE, PROMOTED, GRADUATED, WITHDRAWN).
     * Add `Parent` table with `primary_phone` (WhatsApp No).
-2.  **Koyon ID Generator:**
+2.  **Silẹti ID Generator:**
     * Logic: Combine `Organization.short_code` + `current_year` + `auto_increment_integer`.
     * Example: KWA-2026-0001.
 3.  **CSV Import Service:**
     * POST `/students/upload`: Accepts a multipart/form-data CSV file.
-    * Logic: Parse with `csv` module, validate headers, generate `ko_id` for each row, and use SQLAlchemy `bulk_save_objects`.
+    * Logic: Parse with `csv` module, validate headers, generate `silete_id` for each row, and use SQLAlchemy `bulk_save_objects`.
 4.  **UI - Management Dashboard:**
     * Build a data table in Next.js to list students with filtering by Class and Status.
 
@@ -99,7 +99,7 @@ Access: Chidi (Bursar) can now log in. Because his role is BURSAR, your code wil
 1.  **WhatsApp Webhook:**
     * POST `/webhooks/whatsapp`: Verify incoming requests from Meta Cloud API.
 2.  **Conversation Logic:**
-    * New User: Prompt for `ko_id` and Student Date of Birth.
+    * New User: Prompt for `silete_id` and Student Date of Birth.
     * Validation: If verified, link the WhatsApp sender's phone to the `Parent` record.
     * Existing User: Respond to keywords like "Balance", "Pay", or "Receipt".
 3.  **Automated Responses:**
@@ -138,28 +138,3 @@ Access: Chidi (Bursar) can now log in. Because his role is BURSAR, your code wil
 1.  **Multi-tenancy:** Review all repository patterns to ensure `org_id` is always present in the SQL `WHERE` clause.
 2.  **Constraints:** Verify SQL `CHECK` constraints on all amount columns to prevent negative values.
 3.  **Audit Logs:** Ensure every manual adjustment to an invoice is recorded in the `audit_logs` table with the user ID and timestamp.
-
-
-
-### Visual Identity (The "Chalk" Aesthetic)
-Follow these hex codes and settings exactly as defined in the configuration images:
-
-### Core Color Palette
-- **Primary:** `#a67c52` (Chalk Brown/Gold) - Use for Primary Buttons and accents.
-- **Background:** `#f5f1e6` (Off-white/Cream) - Use for the main page background.
-- **Foreground/Text:** `#4a3f35` (Dark Umber) - Use for primary text.
-- **Secondary:** `#e2d8c3` | **Secondary Foreground:** `#5c4d3f`
-- **Muted:** `#ece5d8` | **Muted Foreground:** `#7d6b56`
-- **Accent:** `#d4c8aa` | **Accent Foreground:** `#4a3f35`
-- **Card:** `#fffcf5` | **Card Foreground:** `#4a3f35`
-- **Destructive:** `#b54a35`
-
-### Typography (Tailwind Config)
-- **Font Sans (Headings):** 'Libre Baskerville', serif.
-- **Font Serif (Body):** 'Lora', serif.
-- **Font Mono:** 'IBM Plex Mono', monospace.
-- **STYLING:** Use strictly lowercase for all headings and UI labels to maintain the minimalist boutique brand feel.
-
-### UI Geometry
-- **Radius:** `0.25rem` (Sharp, professional corners).
-- **Shadows:** X: 0px, Y: 1px, Blur: 2px, Spread: 0px, Color: `#0000000d`.

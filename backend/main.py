@@ -15,4 +15,4 @@ app.include_router(payments_router)
 
 @app.get("/")
 async def root():
-    return {"message": "Welcome to Kọ́ API", "status": "active"}
+    return {"message": "Welcome to ṣilẹti API", "status": "active"}

@@ -87,7 +87,7 @@ class Student(Base):
     class_id = Column(UUID(as_uuid=True), ForeignKey("classes.id"), nullable=True)
     
     # The human-readable ID: e.g., "CHS/2026/0001"
-    ko_id = Column(String(30), unique=True, nullable=False, index=True)
+    silete_id = Column(String(30), unique=True, nullable=False, index=True)
     
     # helpers columns for id generation
     serial_number = Column(Integer, nullable=False) # e.g., 1

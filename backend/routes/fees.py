@@ -20,6 +20,19 @@ def create_fee_template(
     """
     Creates a master fee structure package alongside its distinct cost components.
     """
+    # Concurrency Guard: Prevent double-click creation of identical templates within the same school
+    existing_template = db.query(models.FeeTemplate).filter(
+        models.FeeTemplate.org_id == current_user.org_id,
+        models.FeeTemplate.name == template_in.name,
+        models.FeeTemplate.deleted_at == None
+    ).first()
+
+    if existing_template:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"A fee template named '{template_in.name}' already exists and is active."
+        )
+
     template = models.FeeTemplate(
         name=template_in.name,
         description=template_in.description,
@@ -38,32 +51,31 @@ def create_fee_template(
         for item in template_in.line_items
     ]
     db.add_all(line_items)
-    
     db.commit()
     db.refresh(template)
     return template
 
 
-# LIST ALL FEE TEMPLATES FOR CURRENT ORG (ADMIN/BURSAR ONLY)
+
+# GET ALL ACTIVE FEE TEMPLATES FOR AN ORGANIZATION
 @router.get("/", response_model=list[schemas.FeeTemplateResponse])
-def list_fee_templates(
+def get_fee_templates(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(security.RoleChecker(["admin", "bursar"]))
 ):
     """
-    Retrieves all active fee configurations owned by the current organization.
-    Filters out any records marked as soft-deleted.
+    Retrieves all non-deleted fee templates belonging exclusively to the authenticated user's organization.
     """
-    # selectinload fetches all nested children lists efficiently via a single grouped second query
-    templates = db.query(models.FeeTemplate).options(
+    return db.query(models.FeeTemplate).options(
         selectinload(models.FeeTemplate.line_items)
     ).filter(
         models.FeeTemplate.org_id == current_user.org_id,
         models.FeeTemplate.deleted_at == None
     ).all()
-    return templates
 
-# GET SINGLE FEE TEMPLATE BY ID (ADMIN/BURSAR ONLY)
+
+
+# GET SINGLE FEE TEMPLATE DETAILS BY ID
 @router.get("/{template_id}", response_model=schemas.FeeTemplateResponse)
 def get_fee_template(
     template_id: UUID,
@@ -71,9 +83,9 @@ def get_fee_template(
     current_user: models.User = Depends(security.RoleChecker(["admin", "bursar"]))
 ):
     """
-    Retrieves the complete breakdown structure of a specific fee template ID.
-    Enforces tenant validation limits strictly.
+    Retrieves the complete breakdown structure of a specific fee template.
     """
+    # Security Patch: Added multi-tenant isolation guard via current_user.org_id
     template = db.query(models.FeeTemplate).options(
         selectinload(models.FeeTemplate.line_items)
     ).filter(
@@ -85,7 +97,7 @@ def get_fee_template(
     if not template:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Fee template not found"
+            detail="Fee template not found or access denied."
         )
     return template
 
@@ -115,10 +127,8 @@ def delete_fee_template(
             detail="Fee template not found"
         )
 
-    # Perform soft-delete by writing a timestamp to the record header
-    query.update(
-        {"deleted_at": datetime.now(timezone.utc)},
-        synchronize_session=False
-    )
+    # Perform soft delete by tracking deletion time context
+    template.deleted_at = datetime.now(timezone.utc)
     db.commit()
-    return {"message": "Fee template deleted successfully."}
+
+    return {"message": "Fee template deleted successfully"}

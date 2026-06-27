@@ -3,7 +3,7 @@ from datetime import date
 from typing import Optional
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session, selectinload
+from sqlalchemy.orm import Session, selectinload, joinedload
 
 import models
 import schemas
@@ -18,7 +18,7 @@ def sync_invoice_status(invoice: models.Invoice) -> None:
     Helper function to dynamically re-evaluate and sync an invoice's status 
     whenever its total financial obligations or paid balances shift.
     """
-    if invoice.status == "voided":
+    if invoice.status == models.InvoiceStatus.VOIDED:
         return
 
     if invoice.paid_amount == 0:
@@ -74,7 +74,7 @@ def generate_invoices(
         models.Invoice.session == request.session,
         models.Invoice.term == request.term,
         models.Invoice.student_id.in_(student_ids),
-        models.Invoice.status != "voided"  # Allows running again if previous bills were voided
+        models.Invoice.status != models.InvoiceStatus.VOIDED  # Safe Enum evaluation tracking
     ).first()
 
     if existing_invoice:
@@ -148,7 +148,7 @@ def void_single_invoice(
     if not invoice:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invoice record not found")
 
-    if invoice.status == "voided":
+    if invoice.status == models.InvoiceStatus.VOIDED:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="This invoice is already voided.")
 
     # Prevent erasing paper trails if payments exist
@@ -183,7 +183,7 @@ def void_class_invoices(
         models.Invoice.session == session,
         models.Invoice.term == term,
         models.Student.class_id == class_id,
-        models.Invoice.status != "voided"
+        models.Invoice.status != models.InvoiceStatus.VOIDED
     ).all()
 
     if not invoices:
@@ -227,7 +227,7 @@ def append_optional_fee_to_invoice(
     if not invoice:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invoice record not found")
 
-    if invoice.status == "voided":
+    if invoice.status == models.InvoiceStatus.VOIDED:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot mutate a voided invoice statement.")
 
     target_item = db.query(models.FeeLineItem).filter(models.FeeLineItem.id == payload.fee_line_item_id).first()
@@ -275,7 +275,7 @@ def remove_fee_item_from_invoice(
     if not invoice:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invoice record not found")
 
-    if invoice.status == "voided":
+    if invoice.status == models.InvoiceStatus.VOIDED:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot alter a voided invoice statement.")
 
     # Locate targeted sub-item item inside the pre-loaded items array
@@ -313,13 +313,22 @@ def list_invoices(
     Enables administrators to query all bills issued by their institution with granular multi-variable sorting.
     """
     query = db.query(models.Invoice).options(
-        selectinload(models.Invoice.items)
+        selectinload(models.Invoice.items),
+        joinedload(models.Invoice.student)  # Optimization: Eagerly map student identifiers
     ).filter(models.Invoice.org_id == current_user.org_id)
 
     if class_id:
         query = query.join(models.Student).filter(models.Student.class_id == class_id)
     if status:
-        query = query.filter(models.Invoice.status == status)
+        try:
+            # Explicit string-to-Enum parsing to prevent DB serialization exceptions
+            enum_status = models.InvoiceStatus(status.lower())
+            query = query.filter(models.Invoice.status == enum_status)
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid query filter status value: '{status}'"
+            )
     if session:
         query = query.filter(models.Invoice.session == session)
     if term:
@@ -340,10 +349,11 @@ def get_single_invoice(
     Fetches detailed sub-items information of an individual student invoice statement.
     """
     invoice = db.query(models.Invoice).options(
-        selectinload(models.Invoice.items)
+        selectinload(models.Invoice.items),
+        joinedload(models.Invoice.student)  # Trace individual student profiles transparently
     ).filter(
         models.Invoice.id == invoice_id,
-        models.Invoice.org_id == current_user.org_id
+        models.Invoice.org_id == current_user.org_id  # Security Patch: Multi-tenant tenant boundary guard
     ).first()
 
     if not invoice:

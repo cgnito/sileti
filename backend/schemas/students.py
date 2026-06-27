@@ -32,7 +32,7 @@ class StudentUpdate(BaseModel):
 
 class StudentResponse(StudentBase):
     id: UUID
-    ko_id: str
+    silete_id: str
     org_id: UUID
     class_id: UUID
     status: str

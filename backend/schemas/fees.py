@@ -118,3 +118,16 @@ class InvoiceResponse(BaseModel):
 class AddOptionalItemRequest(BaseModel):
     """Validates input when an administrator appends a missed optional fee to a student's profile."""
     fee_line_item_id: UUID  # The ID of the item from the catalog template
+
+
+
+class InitializePaymentResponse(BaseModel): #check back
+    """
+    Outbound response schema returning the checkout channel parameter back
+    to the client environment alongside the generated unique reference tracking hash.
+    """
+    authorization_url: str
+    reference: str
+
+    class Config:
+        from_attributes = True

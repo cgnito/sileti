@@ -18,11 +18,14 @@ router = APIRouter(tags=["Authentication"])
 # USER LOGIN / TOKEN GENERATION (PUBLIC ENDPOINT)
 @router.post("/auth/login")
 def login(
-    form_data: OAuth2PasswordRequestForm = Depends(), 
+    form_data: OAuth2PasswordRequestForm = Depends(), \
     db: Session = Depends(get_db)
 ):
+    # Normalize input email string to lowercase to ensure case-insensitive matching
+    login_email = form_data.username.lower().strip() if form_data.username else ""
+    
     # Search for user by email address
-    user = db.query(models.User).filter(models.User.email == form_data.username).first()
+    user = db.query(models.User).filter(models.User.email == login_email).first()
     
     # Secure validation check (fails identically for both bad email and bad password to prevent enumeration)
     if not user or not security.verify_password(form_data.password, user.password_hash):
@@ -69,7 +72,10 @@ def verify_email(
             detail="Invalid or expired token"
         )
 
-    user = db.query(models.User).filter(models.User.email == email).first()
+    # Normalize the decoded token email just in case legacy database values hold mixed text formatting
+    verification_email = email.lower().strip() if email else ""
+
+    user = db.query(models.User).filter(models.User.email == verification_email).first()
     if not user:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -125,7 +131,10 @@ def resend_verification_email(
     Only sends if user exists and is_active is False.
     Uses BackgroundTasks so the response returns immediately without waiting for email send.
     """
-    user = db.query(models.User).filter(models.User.email == email_data.email).first()
+    # Normalize user input string before execution querying routines
+    target_email = email_data.email.lower().strip() if email_data.email else ""
+    
+    user = db.query(models.User).filter(models.User.email == target_email).first()
     
     if not user:
         # Don't reveal whether email exists (security best practice)

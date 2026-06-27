@@ -1,6 +1,6 @@
-# Kọ́ Database Schema Specification (v1.1)
+# ṣilẹti Database Schema Specification (v1.1)
 
-This document defines the relational database schema for **Kọ́**. The system uses **PostgreSQL** with **UUID v4** for all primary keys to ensure multi-tenant security and prevent ID enumeration.
+This document defines the relational database schema for **ṣilẹti**. The system uses **PostgreSQL** with **UUID v4** for all primary keys to ensure multi-tenant security and prevent ID enumeration.
 
 ---
 
@@ -82,7 +82,7 @@ This document defines the relational database schema for **Kọ́**. The system 
 | `id` | UUID (PK) | Unique identifier. |
 | `org_id` | UUID (FK) | Multi-tenant link to `organizations.id`. |
 | `class_id` | UUID (FK) | Current link to `classes.id`. |
-| `ko_id` | VARCHAR(20) | Unique human-readable ID (Indexed). |
+| `silete_id` | VARCHAR(20) | Unique human-readable ID (Indexed). |
 | `first_name` | VARCHAR(100) | Student's given name. |
 | `last_name` | VARCHAR(100) | Student's family name. |
 | `date_of_birth` | DATE | Student's birth date. |
@@ -179,3 +179,5 @@ This document defines the relational database schema for **Kọ́**. The system 
 2. **Immutability:** Once a `transaction` is recorded, the row cannot be edited or deleted.
 3. **Financial Precision:** All currency values use `NUMERIC(12,2)` to prevent floating-point errors.
 4. **Soft Deletes:** Key entities use a `deleted_at` column to maintain audit trails while hiding records from UI.
+
+

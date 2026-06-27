@@ -13,7 +13,8 @@ from .fees import (
     InvoiceGenerationRequest,
     AddOptionalItemRequest,
     InvoiceDetailResponse,
-    InvoiceResponse
+    InvoiceResponse,
+    InitializePaymentResponse
 )
 
 __all__ = [
@@ -42,5 +43,6 @@ __all__ = [
     "InvoiceGenerationRequest",
     "AddOptionalItemRequest",
     "InvoiceResponse",
-    "InvoiceDetailResponse"
+    "InvoiceDetailResponse",
+    "InitializePaymentResponse"
 ]

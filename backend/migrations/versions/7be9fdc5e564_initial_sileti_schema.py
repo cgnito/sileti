@@ -1,8 +1,8 @@
-"""initial graduation and student fix
+"""initial_sileti_schema
 
-Revision ID: b0e454b8c525
+Revision ID: 7be9fdc5e564
 Revises: 
-Create Date: 2026-05-15 02:04:50.033695
+Create Date: 2026-05-24 23:46:22.363253
 
 """
 from typing import Sequence, Union
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = 'b0e454b8c525'
+revision: str = '7be9fdc5e564'
 down_revision: Union[str, Sequence[str], None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
@@ -79,6 +79,7 @@ def upgrade() -> None:
     sa.Column('template_id', sa.UUID(), nullable=False),
     sa.Column('name', sa.String(length=255), nullable=False),
     sa.Column('amount', sa.Numeric(precision=12, scale=2), nullable=False),
+    sa.Column('is_compulsory', sa.Boolean(), nullable=False),
     sa.ForeignKeyConstraint(['template_id'], ['fee_templates.id'], ),
     sa.PrimaryKeyConstraint('id')
     )
@@ -86,19 +87,20 @@ def upgrade() -> None:
     sa.Column('id', sa.UUID(), nullable=False),
     sa.Column('org_id', sa.UUID(), nullable=False),
     sa.Column('class_id', sa.UUID(), nullable=True),
-    sa.Column('ko_id', sa.String(length=30), nullable=False),
+    sa.Column('silete_id', sa.String(length=30), nullable=False),
     sa.Column('serial_number', sa.Integer(), nullable=False),
     sa.Column('admission_year', sa.Integer(), nullable=False),
     sa.Column('first_name', sa.String(length=100), nullable=False),
     sa.Column('last_name', sa.String(length=100), nullable=False),
     sa.Column('date_of_birth', sa.Date(), nullable=True),
+    sa.Column('parent_email', sa.String(length=255), nullable=True),
     sa.Column('status', sa.Enum('ACTIVE', 'GRADUATED', 'WITHDRAWN', name='studentstatus'), nullable=True),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=True),
     sa.ForeignKeyConstraint(['class_id'], ['classes.id'], ),
     sa.ForeignKeyConstraint(['org_id'], ['organizations.id'], ),
     sa.PrimaryKeyConstraint('id')
     )
-    op.create_index(op.f('ix_students_ko_id'), 'students', ['ko_id'], unique=True)
+    op.create_index(op.f('ix_students_silete_id'), 'students', ['silete_id'], unique=True)
     op.create_table('invoices',
     sa.Column('id', sa.UUID(), nullable=False),
     sa.Column('org_id', sa.UUID(), nullable=False),
@@ -152,7 +154,7 @@ def downgrade() -> None:
     op.drop_table('invoice_details')
     op.drop_table('student_parents')
     op.drop_table('invoices')
-    op.drop_index(op.f('ix_students_ko_id'), table_name='students')
+    op.drop_index(op.f('ix_students_silete_id'), table_name='students')
     op.drop_table('students')
     op.drop_table('fee_line_items')
     op.drop_index(op.f('ix_users_email'), table_name='users')

@@ -38,12 +38,12 @@ def send_verification_email(email: str, token: str):
     
     try:
         resend.Emails.send({
-            "from": "Kọ́ App <onboarding@resend.dev>", #TODO: change to production email
+            "from": "ṣilẹti App <onboarding@resend.dev>", #TODO: change to production email
             "to": email, 
-            "subject": "Verify your Kọ́ account",
+            "subject": "Verify your ṣilẹti account",
             "html": f"""
                 <div style="font-family: sans-serif; max-width: 600px; margin: auto;">
-                    <h2>Welcome to Kọ́!</h2>
+                    <h2>Welcome to ṣilẹti!</h2>
                     <p>Thank you for registering your school. Please click the button below to verify your account:</p>
                     <a href="{verify_link}" style="background-color: #000; color: #fff; padding: 10px 20px; text-decoration: none; border-radius: 5px;">
                         Verify My Account
@@ -67,9 +67,9 @@ def send_staff_invitation_email(email: str, token: str, admin_name: str, org_nam
     
     try:
         resend.Emails.send({
-            "from": "Kọ́ App <onboarding@resend.dev>", #TODO: change to production email
+            "from": "ṣilẹti App <onboarding@resend.dev>", #TODO: change to production email
             "to": email, 
-            "subject": f"Invitation to join {org_name} on Kọ́",
+            "subject": f"Invitation to join {org_name} on ṣilẹti",
             "html": f"""
                 <div style="font-family: sans-serif; max-width: 600px; margin: auto;">
                     <h2>You've been invited!</h2>
@@ -83,3 +83,5 @@ def send_staff_invitation_email(email: str, token: str, admin_name: str, org_nam
         })
     except Exception as e:
         print(f"Invite email error: {e}")
+
+#TODO: MAKE EMAILS FOLLOW DESIGN.MD

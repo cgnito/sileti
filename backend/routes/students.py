@@ -24,7 +24,7 @@ def get_next_serial(db: Session, org_id: UUID, year: int) -> int:
     ).scalar()
     return (max_val or 0) + 1
 
-def format_ko_id(short_code: str, year: int, serial: int) -> str:
+def format_silete_id(short_code: str, year: int, serial: int) -> str:
     """Formats the ID into the human-readable string: KWA/2026/0001"""
     return f"{short_code}/{year}/{serial:04d}"
 
@@ -50,13 +50,13 @@ def create_single_student(
     year = datetime.now().year
     short_code = current_user.organization.short_code
     next_serial = get_next_serial(db, current_user.org_id, year)
-    readable_id = format_ko_id(short_code, year, next_serial)
+    readable_id = format_silete_id(short_code, year, next_serial)
 
     # Save
     new_student = models.Student(
         org_id=current_user.org_id,
         class_id=student_in.class_id,
-        ko_id=readable_id,
+        silete_id=readable_id,
         serial_number=next_serial,
         admission_year=year,
         first_name=student_in.first_name,
@@ -104,12 +104,12 @@ def bulk_upload_students(
             continue
         
         # Generate the ID for this specific row
-        readable_id = format_ko_id(short_code, year, current_serial)
+        readable_id = format_silete_id(short_code, year, current_serial)
         
         new_student = models.Student(
             org_id=current_user.org_id,
             class_id=class_id,
-            ko_id=readable_id,
+            silete_id=readable_id,
             serial_number=current_serial, # Use the counter
             admission_year=year,
             first_name=row['first_name'],
