@@ -110,14 +110,7 @@ Access: Chidi (Bursar) can now log in. Because his role is BURSAR, your code wil
 ## Phase 6: Payment Reconciliation and Webhooks
 **Goal:** Ensure financial records are updated automatically without manual entry.
 
-1.  **Paystack Webhook:**
-    * POST `/webhooks/paystack`: Must implement `X-Paystack-Signature` verification.
-2.  **Reconciliation Logic:**
-    * Find the `VirtualAccount` by the account reference provided in the webhook.
-    * Update `Invoice.paid_amount` and increment based on the transaction value.
-    * Automatically move `Invoice.status` to `PAID` if the balance is cleared.
-3.  **Ledger Entry:**
-    * Insert a record into the `Transactions` table for every successful webhook event.
+using Nomba API
 
 ---
 
