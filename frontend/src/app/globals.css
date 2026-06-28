@@ -1,0 +1,181 @@
+@import "tailwindcss";
+
+/* ──────────────────────────────────────────────────────────
+   ṣilẹti design tokens
+   Source of truth: the original HTML mockups (earthy/parchment
+   "school ledger" palette). Keep these in sync with
+   locafind/sileti design docs if they're updated.
+   ────────────────────────────────────────────────────────── */
+
+:root {
+  /* Surfaces */
+  --color-background: #f5f1e6;
+  --color-card: #fffcf5;
+  --color-surface: #fff8f4;
+  --color-surface-bright: #fff8f4;
+  --color-surface-dim: #e8d7c9;
+  --color-surface-variant: #f1dfd1;
+  --color-surface-container: #fdebdc;
+  --color-surface-container-low: #fff1e7;
+  --color-surface-container-high: #f7e5d7;
+  --color-surface-container-highest: #f1dfd1;
+  --color-surface-container-lowest: #ffffff;
+
+  /* Borders / outlines */
+  --color-border: #dbd0ba;
+  --color-outline: #82756a;
+  --color-outline-variant: #d4c4b7;
+
+  /* Brand: primary (Ledger Navy in copy, rendered here as the
+     mockups' warm brown — see note below if you're matching
+     against a separate navy/red "Stamp" system) */
+  --color-primary: #79542e;
+  --color-primary-container: #956c44;
+  --color-primary-fixed: #ffdcbd;
+  --color-primary-fixed-dim: #eebd8e;
+  --color-on-primary: #ffffff;
+  --color-on-primary-container: #fffbff;
+  --color-on-primary-fixed: #2c1600;
+  --color-on-primary-fixed-variant: #61401b;
+  --color-inverse-primary: #eebd8e;
+  --color-surface-tint: #7c5730;
+
+  /* Secondary */
+  --color-secondary: #655e4d;
+  --color-secondary-container: #ece2cc;
+  --color-secondary-fixed: #ece2cc;
+  --color-secondary-fixed-dim: #cfc6b1;
+  --color-on-secondary: #ffffff;
+  --color-on-secondary-container: #6b6453;
+  --color-on-secondary-fixed: #201b0e;
+  --color-on-secondary-fixed-variant: #4c4637;
+
+  /* Tertiary */
+  --color-tertiary: #645b43;
+  --color-tertiary-container: #7d745a;
+  --color-tertiary-fixed: #eee2c2;
+  --color-tertiary-fixed-dim: #d2c6a8;
+  --color-on-tertiary: #ffffff;
+  --color-on-tertiary-container: #fffbff;
+  --color-on-tertiary-fixed: #211b08;
+  --color-on-tertiary-fixed-variant: #4e462f;
+
+  /* Text */
+  --color-on-background: #231a11;
+  --color-on-surface: #231a11;
+  --color-on-surface-variant: #50453b;
+  --color-inverse-surface: #392f25;
+  --color-inverse-on-surface: #ffeee0;
+  --color-muted: #ece5d8;
+  --color-muted-foreground: #7d6b56;
+
+  /* Error / destructive */
+  --color-error: #ba1a1a;
+  --color-error-container: #ffdad6;
+  --color-on-error: #ffffff;
+  --color-on-error-container: #93000a;
+  --color-destructive: #b54a3f;
+}
+
+@theme inline {
+  --color-background: var(--color-background);
+  --color-card: var(--color-card);
+  --color-surface: var(--color-surface);
+  --color-surface-bright: var(--color-surface-bright);
+  --color-surface-dim: var(--color-surface-dim);
+  --color-surface-variant: var(--color-surface-variant);
+  --color-surface-container: var(--color-surface-container);
+  --color-surface-container-low: var(--color-surface-container-low);
+  --color-surface-container-high: var(--color-surface-container-high);
+  --color-surface-container-highest: var(--color-surface-container-highest);
+  --color-surface-container-lowest: var(--color-surface-container-lowest);
+
+  --color-border: var(--color-border);
+  --color-outline: var(--color-outline);
+  --color-outline-variant: var(--color-outline-variant);
+
+  --color-primary: var(--color-primary);
+  --color-primary-container: var(--color-primary-container);
+  --color-primary-fixed: var(--color-primary-fixed);
+  --color-primary-fixed-dim: var(--color-primary-fixed-dim);
+  --color-on-primary: var(--color-on-primary);
+  --color-on-primary-container: var(--color-on-primary-container);
+  --color-on-primary-fixed: var(--color-on-primary-fixed);
+  --color-on-primary-fixed-variant: var(--color-on-primary-fixed-variant);
+  --color-inverse-primary: var(--color-inverse-primary);
+  --color-surface-tint: var(--color-surface-tint);
+
+  --color-secondary: var(--color-secondary);
+  --color-secondary-container: var(--color-secondary-container);
+  --color-secondary-fixed: var(--color-secondary-fixed);
+  --color-secondary-fixed-dim: var(--color-secondary-fixed-dim);
+  --color-on-secondary: var(--color-on-secondary);
+  --color-on-secondary-container: var(--color-on-secondary-container);
+  --color-on-secondary-fixed: var(--color-on-secondary-fixed);
+  --color-on-secondary-fixed-variant: var(--color-on-secondary-fixed-variant);
+
+  --color-tertiary: var(--color-tertiary);
+  --color-tertiary-container: var(--color-tertiary-container);
+  --color-tertiary-fixed: var(--color-tertiary-fixed);
+  --color-tertiary-fixed-dim: var(--color-tertiary-fixed-dim);
+  --color-on-tertiary: var(--color-on-tertiary);
+  --color-on-tertiary-container: var(--color-on-tertiary-container);
+  --color-on-tertiary-fixed: var(--color-on-tertiary-fixed);
+  --color-on-tertiary-fixed-variant: var(--color-on-tertiary-fixed-variant);
+
+  --color-on-background: var(--color-on-background);
+  --color-on-surface: var(--color-on-surface);
+  --color-on-surface-variant: var(--color-on-surface-variant);
+  --color-inverse-surface: var(--color-inverse-surface);
+  --color-inverse-on-surface: var(--color-inverse-on-surface);
+  --color-muted: var(--color-muted);
+  --color-muted-foreground: var(--color-muted-foreground);
+
+  --color-error: var(--color-error);
+  --color-error-container: var(--color-error-container);
+  --color-on-error: var(--color-on-error);
+  --color-on-error-container: var(--color-on-error-container);
+  --color-destructive: var(--color-destructive);
+
+  /* Fonts — wired to next/font variables set on <html> in app/layout.tsx */
+  --font-headline: var(--font-libre-baskerville), serif;
+  --font-body: var(--font-libre-baskerville), serif;
+  --font-label: var(--font-ibm-plex-mono), monospace;
+
+  /* Radii — the mockups use a near-flat scale, not Tailwind's default */
+  --radius-DEFAULT: 0.125rem;
+  --radius-lg: 0.25rem;
+  --radius-xl: 0.5rem;
+  --radius-full: 0.75rem;
+
+  /* Spacing aliases used throughout the mockups */
+  --spacing-gutter: 1.5rem;
+  --spacing-margin-mobile: 1rem;
+  --spacing-margin-desktop: 2.5rem;
+}
+
+body {
+  background: var(--color-background);
+  color: var(--color-on-background);
+  font-family: var(--font-body);
+}
+
+/* Marquee animation used in the social-proof strip */
+@keyframes marquee-scroll {
+  0% {
+    transform: translateX(0);
+  }
+  100% {
+    transform: translateX(-50%);
+  }
+}
+
+.animate-marquee {
+  animation: marquee-scroll 30s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-marquee {
+    animation: none;
+  }
+}
