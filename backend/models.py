@@ -209,7 +209,7 @@ class Transaction(Base):
     invoice_id = Column(UUID(as_uuid=True), ForeignKey("invoices.id"), nullable=False)
     
     amount = Column(Numeric(12, 2), nullable=False)
-    #the reference from Paystack/Flutterwave to prevent double-crediting
+    #the reference from Nomba to prevent double-crediting
     reference = Column(String(100), unique=True, nullable=False)
     
     #method of payment(transfer, card, ussd)
