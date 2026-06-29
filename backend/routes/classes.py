@@ -11,16 +11,14 @@ from schemas.classes import ClassCreate, ClassResponse, ClassUpdate
 
 router = APIRouter(prefix="/classes", tags=["Class Management"])
 
-# CREATE A NEW CLASS (Access: Admin, Bursar)
+# create a new class (access: admin, staff)
 @router.post("/", response_model=ClassResponse, status_code=status.HTTP_201_CREATED)
 def create_class(
     class_in: ClassCreate,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(security.RoleChecker(["admin", "bursar"]))
+    current_user: security.AuthContext = Depends(security.RoleChecker(["admin", "staff"]))
 ):
-    # Concurrency Guard: Explicit read verification with a hard block against existing rows.
-    # Because your Pydantic schema already strips and title-cases class_in.name,
-    # this check perfectly aligns with your clean database state.
+    # check if a class with the same name already exists in this organization
     existing_class = db.query(models.SchoolClass).filter(
         models.SchoolClass.org_id == current_user.org_id,
         models.SchoolClass.name == class_in.name
@@ -42,27 +40,24 @@ def create_class(
     return new_class
 
 
-
-
-# GET ALL CLASSES (Access: Admin, Bursar)
+# get all classes (access: admin, staff)
 @router.get("/", response_model=List[ClassResponse])
 def get_classes(
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(security.RoleChecker(["admin", "bursar"]))
+    current_user: security.AuthContext = Depends(security.RoleChecker(["admin", "staff"]))
 ):
     return db.query(models.SchoolClass).filter(
         models.SchoolClass.org_id == current_user.org_id
     ).all()
 
 
-
-# UPDATE A CLASS (Access: Admin, Bursar)
+# update a class (access: admin, staff)
 @router.patch("/{class_id}", response_model=ClassResponse)
 def update_class(
     class_id: UUID,
     class_update: ClassUpdate,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(security.RoleChecker(["admin", "bursar"]))
+    current_user: security.AuthContext = Depends(security.RoleChecker(["admin", "staff"]))
 ):
     school_class = db.query(models.SchoolClass).filter(
         models.SchoolClass.id == class_id,
@@ -73,7 +68,6 @@ def update_class(
 
     update_data = class_update.model_dump(exclude_unset=True)
     
-    # If name is being updated, validate against existing naming metrics to prevent conflicts
     if "name" in update_data and update_data["name"]:
         duplicate = db.query(models.SchoolClass).filter(
             models.SchoolClass.org_id == current_user.org_id,
@@ -94,14 +88,12 @@ def update_class(
     return school_class
 
 
-
-
-# DELETE A CLASS (Access: Admin)
+# delete a class (access: admin only)
 @router.delete("/{class_id}")
 def delete_class(
     class_id: UUID,
     db: Session = Depends(get_db),
-    current_admin: models.User = Depends(security.allow_admin_only)
+    current_admin: security.AuthContext = Depends(security.allow_admin_only)
 ):
     school_class = db.query(models.SchoolClass).filter(
         models.SchoolClass.id == class_id,

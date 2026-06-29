@@ -13,6 +13,21 @@ from database import get_db
 router = APIRouter(prefix="/billing", tags=["Billing Engine"])
 
 
+"""
+list_invoices: GET /billing/invoices
+if status_filter:
+        try:
+            # resolve string parameter cleanly into enum instance
+            enum_status = models.InvoiceStatus(status_filter.lower())
+            query = query.filter(models.Invoice.status == enum_status)
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid query filter status value: '{status_filter}'"
+            )
+"""
+
+
 def sync_invoice_status(invoice: models.Invoice) -> None:
     """
     Helper function to dynamically re-evaluate and sync an invoice's status 
@@ -35,7 +50,7 @@ def sync_invoice_status(invoice: models.Invoice) -> None:
 def generate_invoices(
     request: schemas.InvoiceGenerationRequest,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(security.RoleChecker(["admin", "bursar"]))
+    current_user: security.AuthContext = Depends(security.RoleChecker(["admin", "staff"]))
 ):
     """
     Executes batch invoice generation for an entire active class roster.
@@ -134,7 +149,7 @@ def generate_invoices(
 def void_single_invoice(
     invoice_id: UUID,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(security.RoleChecker(["admin", "bursar"]))
+    current_user: security.AuthContext = Depends(security.RoleChecker(["admin", "staff"]))
 ):
     """
     Cancels/Voids a single individual invoice statement.
@@ -172,7 +187,7 @@ def void_class_invoices(
     session: str,
     term: str,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(security.RoleChecker(["admin", "bursar"]))
+    current_user: security.AuthContext = Depends(security.RoleChecker(["admin", "staff"]))
 ):
     """
     Mass-cancels/Voids all active invoices for a specific class, term, and session.
@@ -211,7 +226,7 @@ def append_optional_fee_to_invoice(
     invoice_id: UUID,
     payload: schemas.AddOptionalItemRequest,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(security.RoleChecker(["admin", "bursar"]))
+    current_user: security.AuthContext = Depends(security.RoleChecker(["admin", "staff"]))
 ):
     """
     Appends an individual optional catalog item directly onto a student's active invoice profile.
@@ -253,13 +268,13 @@ def append_optional_fee_to_invoice(
 
 
 
-# 4. REMOVE OPTIONAL FEE FROM INVOICE (WITH AUTO STATUS SYNC)
+# REMOVE OPTIONAL FEE FROM INVOICE (WITH AUTO STATUS SYNC)
 @router.delete("/invoices/{invoice_id}/items/{item_id}", response_model=schemas.InvoiceResponse)
 def remove_fee_item_from_invoice(
     invoice_id: UUID,
     item_id: UUID,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(security.RoleChecker(["admin", "bursar"]))
+    current_user: security.AuthContext = Depends(security.RoleChecker(["admin", "staff"]))
 ):
     """
     Removes a specific sub-cost item directly from a student's invoice ledger statement.
@@ -299,7 +314,7 @@ def remove_fee_item_from_invoice(
 
 
 
-# 5. QUERY ALL INVOICES (WITH ADVANCED ACCOUNTING FILTERS)
+# QUERY ALL INVOICES (WITH ADVANCED ACCOUNTING FILTERS)
 @router.get("/invoices", response_model=list[schemas.InvoiceResponse])
 def list_invoices(
     class_id: Optional[UUID] = None,
@@ -307,7 +322,7 @@ def list_invoices(
     session: Optional[str] = None,
     term: Optional[str] = None,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(security.RoleChecker(["admin", "bursar"]))
+    current_user: security.AuthContext = Depends(security.RoleChecker(["admin", "staff"]))
 ):
     """
     Enables administrators to query all bills issued by their institution with granular multi-variable sorting.
@@ -324,6 +339,7 @@ def list_invoices(
             # Explicit string-to-Enum parsing to prevent DB serialization exceptions
             enum_status = models.InvoiceStatus(status.lower())
             query = query.filter(models.Invoice.status == enum_status)
+            # if there's a problem, i'll come back here
         except ValueError:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -338,12 +354,12 @@ def list_invoices(
 
 
 
-# 6. GET SINGLE INVOICE BREAKDOWN
+# GET SINGLE INVOICE BREAKDOWN
 @router.get("/invoices/{invoice_id}", response_model=schemas.InvoiceResponse)
 def get_single_invoice(
     invoice_id: UUID,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(security.get_current_user)
+    current_user: security.AuthContext = Depends(security.RoleChecker(["admin", "staff"]))
 ):
     """
     Fetches detailed sub-items information of an individual student invoice statement.

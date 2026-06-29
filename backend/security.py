@@ -12,64 +12,96 @@ from database import get_db
 
 load_dotenv()
 
-
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
 
 SECRET_KEY = os.getenv("SECRET_KEY")
 ALGORITHM = os.getenv("ALGORITHM") 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login")
 
-# Get Password Hash
-def get_password_hash(password: str):
+class AuthContext:
+    def __init__(self, *, id, email, full_name, role, org_id, is_active=True, organization=None, user=None):
+        # unified tracking payload across school admins and staff accounts
+        self.id = id
+        self.email = email
+        self.full_name = full_name
+        self.role = role
+        self.org_id = org_id
+        self.is_active = is_active
+        self.organization = organization
+        self.user = user
+
+def get_password_hash(password: str) -> str:
+    # generate secure password hash using bcrypt
     return pwd_context.hash(password)
 
-# Verify Password
-def verify_password(plain_password: str, hashed_password: str):
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    # verify plain password against saved hash profile
     return pwd_context.verify(plain_password, hashed_password)
 
-# Create Verification Token
-def create_verification_token(email: str):
-    expire = datetime.now(timezone.utc) + timedelta(hours=24) # Links expire in 24h
+def create_verification_token(email: str) -> str:
+    # issue a time-restricted token strictly bound for email validation
+    expire = datetime.now(timezone.utc) + timedelta(hours=24)
     to_encode = {"exp": expire, "sub": email, "purpose": "verification"}
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
-# Create Access Token
-def create_access_token(data: dict, expires_delta: timedelta = None):
+def create_access_token(data: dict) -> str:
+    # generate authentication json web token for session access
     to_encode = data.copy()
-    expire = datetime.now(timezone.utc) + (expires_delta or timedelta(minutes=30))
-    to_encode.update({"exp": expire, "purpose": "access"})
+    expire = datetime.now(timezone.utc) + timedelta(days=1)
+    to_encode.update({"exp": expire})
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
-def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db, use_cache=False)):
+def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)) -> AuthContext:
+    # decode access credentials and construct context instance
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         email: str = payload.get("sub")
-        if email is None or payload.get("purpose") != "access":
-            raise HTTPException(status_code=401, detail="Invalid credentials")
+        if email is None:
+            raise HTTPException(status_code=401, detail="invalid session credentials")
     except JWTError:
-        raise HTTPException(status_code=401, detail="Invalid credentials")
+        raise HTTPException(status_code=401, detail="could not validate session credentials")
 
+    # verify against organization table for school admin profiles
+    org = db.query(models.Organization).filter(models.Organization.school_email == email).first()
+    if org:
+        return AuthContext(
+            id=org.id,
+            email=org.school_email,
+            full_name=org.school_name,
+            role="admin",
+            org_id=org.id,
+            is_active=True,
+            organization=org,
+            user=None
+        )
+
+    # fallback query against user table for staff accounts
     user = db.query(models.User).filter(models.User.email == email).first()
     if not user or not user.is_active:
-        raise HTTPException(status_code=401, detail="Invalid credentials")
-    return user
+        raise HTTPException(status_code=401, detail="invalid or inactive account credentials")
+        
+    return AuthContext(
+        id=user.id,
+        email=user.email,
+        full_name=user.full_name,
+        role=str(user.role).lower(),
+        org_id=user.org_id,
+        is_active=user.is_active,
+        organization=user.organization,
+        user=user
+    )
 
-
-#Role Checker 
 class RoleChecker:
     def __init__(self, allowed_roles: list):
-        self.allowed_roles = allowed_roles
+        self.allowed_roles = {str(role).lower() for role in allowed_roles}
 
-    # Use the function defined RIGHT ABOVE in the same file
-    def __call__(self, current_user: models.User = Depends(get_current_user)):
+    def __call__(self, current_user: AuthContext = Depends(get_current_user)) -> AuthContext:
         if current_user.role not in self.allowed_roles:
             raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN, 
-                detail="You do not have permission to perform this action"
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="access denied. insufficient permissions for this operation."
             )
         return current_user
 
-# Pre-defined checkers
-allow_admin_only = RoleChecker([models.UserRole.ADMIN])
-allow_staff = RoleChecker([models.UserRole.ADMIN, models.UserRole.BURSAR])
+# explicit shortcut validator functions for route handlers
+allow_admin_only = RoleChecker(["admin"])
