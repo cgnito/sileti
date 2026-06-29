@@ -1,5 +1,13 @@
 from .orgs import OrgCreate, OrgResponse, EmailVerification, OrgUpdate
-from .users import UserCreate, UserResponse, SetPassword, UserUpdate, ResendEmailRequest
+from .users import (
+    UserCreate, 
+    UserResponse, 
+    SetPassword, 
+    UserUpdate, 
+    ResendEmailRequest,
+    LoginRequest,   
+    TokenResponse   
+)
 from .classes import ClassCreate, ClassResponse, ClassUpdate
 from .students import StudentCreate, StudentResponse, StudentUpdate
 from .fees import (
@@ -24,6 +32,8 @@ __all__ = [
     "OrgUpdate",
     "UserCreate",
     "UserResponse",
+    "LoginRequest",      
+    "TokenResponse",   
     "SetPassword",
     "UserUpdate",
     "ResendEmailRequest",

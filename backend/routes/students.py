@@ -1,5 +1,5 @@
 from uuid import UUID
-from typing import List
+from typing import List, Optional
 from datetime import datetime
 import csv
 from io import StringIO
@@ -15,44 +15,39 @@ from database import get_db
 
 router = APIRouter(prefix="/students", tags=["Student Management"])
 
-# HELPER LOGIC FUNCTIONS
+
+# helper functions for serial identification numbers
 def get_next_serial(db: Session, org_id: UUID, year: int) -> int:
-    """Finds the current highest serial for this school/year."""
     max_val = db.query(func.max(models.Student.serial_number)).filter(
         models.Student.org_id == org_id,
         models.Student.admission_year == year
     ).scalar()
     return (max_val or 0) + 1
 
+
 def format_silete_id(short_code: str, year: int, serial: int) -> str:
-    """Formats the ID into the human-readable string: KWA/2026/0001"""
     return f"{short_code}/{year}/{serial:04d}"
 
 
-
-# CREATE A SINGLE STUDENT (Access: Admin, Bursar)
+# create a single student (access: admin, staff)
 @router.post("/", response_model=schemas.StudentResponse, status_code=status.HTTP_201_CREATED)
 def create_single_student(
     student_in: schemas.StudentCreate,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(security.RoleChecker(["admin", "bursar"]))
+    current_user: security.AuthContext = Depends(security.RoleChecker(["admin", "staff"]))
 ):
-    # Security: Check if class belongs to this school
     school_class = db.query(models.SchoolClass).filter(
         models.SchoolClass.id == student_in.class_id,
         models.SchoolClass.org_id == current_user.org_id
     ).first()
-    
     if not school_class:
         raise HTTPException(status_code=400, detail="That class does not exist in your school.")
 
-    # Generate the ID
     year = datetime.now().year
     short_code = current_user.organization.short_code
     next_serial = get_next_serial(db, current_user.org_id, year)
     readable_id = format_silete_id(short_code, year, next_serial)
 
-    # Save
     new_student = models.Student(
         org_id=current_user.org_id,
         class_id=student_in.class_id,
@@ -68,15 +63,15 @@ def create_single_student(
     db.refresh(new_student)
     return new_student
 
-# BULK UPLOAD STUDENTS (Access: Admin, Bursar)
+
+# bulk upload students from csv file (access: admin, staff)
 @router.post("/bulk-upload/{class_id}")
 def bulk_upload_students(
     class_id: UUID,
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(security.RoleChecker(["admin", "bursar"]))
+    current_user: security.AuthContext = Depends(security.RoleChecker(["admin", "staff"]))
 ):
-    # Setup & Validation
     school_class = db.query(models.SchoolClass).filter(
         models.SchoolClass.id == class_id,
         models.SchoolClass.org_id == current_user.org_id
@@ -87,75 +82,64 @@ def bulk_upload_students(
     if not file.filename.endswith('.csv'):
         raise HTTPException(status_code=400, detail="Please upload a .csv file")
 
-    # Prepare the ID Sequence
     year = datetime.now().year
     short_code = current_user.organization.short_code
-    
-    current_serial = get_next_serial(db, current_user.org_id, year) #fetch starting point for serial number sequence based on existing students in the same year and org
+    current_serial = get_next_serial(db, current_user.org_id, year)
 
-    # Process File
     content = file.file.read().decode('utf-8')
     reader = csv.DictReader(StringIO(content))
-    
     students_to_add = []
     
     for row in reader:
         if not row.get('first_name') or not row.get('last_name'):
             continue
         
-        # Generate the ID for this specific row
         readable_id = format_silete_id(short_code, year, current_serial)
-        
         new_student = models.Student(
             org_id=current_user.org_id,
             class_id=class_id,
             silete_id=readable_id,
-            serial_number=current_serial, # Use the counter
+            serial_number=current_serial,
             admission_year=year,
             first_name=row['first_name'],
             last_name=row['last_name'],
             date_of_birth=datetime.strptime(row['dob'], '%Y-%m-%d').date() if row.get('dob') else None
         )
         students_to_add.append(new_student)
-        
-        # increment the serial for the next student
         current_serial += 1
 
-    # Save everything in one go
     db.add_all(students_to_add)
     db.commit()
-
     return {"message": f"Successfully admitted {len(students_to_add)} students to {school_class.name}"}
 
 
-# BULK PROMOTION (Access: Admin Only)
+# bulk promotion and school session rollover (access: admin only)
 @router.post("/bulk-promotion")
 def bulk_promote_students(
     db: Session = Depends(get_db),
-    current_admin: models.User = Depends(security.allow_admin_only)
+    current_admin: security.AuthContext = Depends(security.allow_admin_only)
 ):
     graduated = 0
     promoted = 0
 
-    # db.begin() - if one update fails, NO students are moved
-    with db.begin():
-        # order by level DESCENDING to avoid moving the same student twice
+    try:
+        # order by level descending to avoid moving the same student twice
         school_classes = db.query(models.SchoolClass).filter(
             models.SchoolClass.org_id == current_admin.org_id
         ).order_by(models.SchoolClass.level.desc()).all()
 
         if not school_classes:
-            raise HTTPException(status_code=400, detail="No classes found for this school")
+            raise HTTPException(status_code=400, detail="no classes found for this school")
 
         max_level = school_classes[0].level
         
-        # Pre-group classes by level for target matching
+        # pre-group classes by level for target matching
         classes_by_level = {}
         for sc in school_classes:
             classes_by_level.setdefault(sc.level, []).append(sc)
 
         for school_class in school_classes:
-            # Target students in THIS class who are ACTIVE
+            # target students in this class who are active
             active_students = db.query(models.Student).filter(
                 models.Student.org_id == current_admin.org_id,
                 models.Student.class_id == school_class.id,
@@ -165,7 +149,7 @@ def bulk_promote_students(
             if not active_students:
                 continue
 
-            # Case: Graduation (Highest Level)
+            # case: graduation (highest level)
             if school_class.level == max_level:
                 for student in active_students:
                     student.status = models.StudentStatus.GRADUATED
@@ -173,7 +157,7 @@ def bulk_promote_students(
                     graduated += 1
                 continue
 
-            # Case: Promotion (Move to level + 1)
+            # case: promotion (move to level + 1)
             next_level = school_class.level + 1
             target_options = classes_by_level.get(next_level)
 
@@ -192,41 +176,43 @@ def bulk_promote_students(
                 student.class_id = target_class.id
                 promoted += 1
 
+        # commit all promotions together atomically
+        db.commit()
+
+    except Exception as e:
+        # roll back the database transaction if any single modification fails
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"failed to complete bulk promotion sequence: {str(e)}"
+        )
+
     return {
         "graduated": graduated,
         "promoted": promoted,
-        "message": "School session rolled over successfully. Entry-level classes are now empty for new intake."
+        "message": "school session rolled over successfully. entry-level classes are now empty for new intake."
     }
 
-# LIST ALL STUDENTS (Access: All Users)
+
+# list all students or filter by class (access: admin, staff)
 @router.get("/", response_model=List[schemas.StudentResponse])
 def list_all_students(
+    class_id: Optional[UUID] = None,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(security.get_current_user)
+    current_user: security.AuthContext = Depends(security.RoleChecker(["admin", "staff"]))
 ):
-    return db.query(models.Student).filter(models.Student.org_id == current_user.org_id).all()
+    query = db.query(models.Student).filter(models.Student.org_id == current_user.org_id)
+    if class_id:
+        query = query.filter(models.Student.class_id == class_id)
+    return query.all()
 
 
-# LIST STUDENTS BY CLASS (Access: All Users)
-@router.get("/class/{class_id}", response_model=List[schemas.StudentResponse])
-def list_students_by_class(
-    class_id: UUID,
-    db: Session = Depends(get_db),
-    current_user: models.User = Depends(security.get_current_user)
-):
-    students = db.query(models.Student).filter(
-        models.Student.class_id == class_id,
-        models.Student.org_id == current_user.org_id
-    ).all()
-    return students
-
-
-# GET SINGLE STUDENT (Access: All Users)
+# get single student profile (access: admin, staff)
 @router.get("/{student_id}", response_model=schemas.StudentResponse)
 def get_student(
     student_id: UUID,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(security.get_current_user)
+    current_user: security.AuthContext = Depends(security.RoleChecker(["admin", "staff"]))
 ):
     student = db.query(models.Student).filter(
         models.Student.id == student_id,
@@ -237,13 +223,13 @@ def get_student(
     return student
 
 
-# UPDATE STUDENT (Access: Admin, Bursar)
+# update student records (access: admin, staff)
 @router.patch("/{student_id}", response_model=schemas.StudentResponse)
 def update_student(
     student_id: UUID,
     student_update: schemas.StudentUpdate,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(security.RoleChecker(["admin", "bursar"]))
+    current_user: security.AuthContext = Depends(security.RoleChecker(["admin", "staff"]))
 ):
     student = db.query(models.Student).filter(
         models.Student.id == student_id,
@@ -254,7 +240,6 @@ def update_student(
 
     update_data = student_update.model_dump(exclude_unset=True)
     
-    # If class_id is being updated, verify the new class exists in the org
     if "class_id" in update_data:
         new_class = db.query(models.SchoolClass).filter(
             models.SchoolClass.id == update_data["class_id"],
@@ -271,12 +256,12 @@ def update_student(
     return student
 
 
-# DELETE STUDENT (Access: Admin Only)
+# delete student profile permanently (access: admin only)
 @router.delete("/{student_id}")
 def delete_student(
     student_id: UUID,
     db: Session = Depends(get_db),
-    current_admin: models.User = Depends(security.allow_admin_only)
+    current_admin: security.AuthContext = Depends(security.allow_admin_only)
 ):
     student = db.query(models.Student).filter(
         models.Student.id == student_id,

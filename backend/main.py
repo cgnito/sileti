@@ -1,9 +1,18 @@
 from fastapi import FastAPI
-from routes import orgs_router, auth_router, users_router, fees_router, billing_router, classes_router, students_router #payments_router  
+from routes import (
+    orgs_router,
+    auth_router,
+    users_router,
+    fees_router,
+    billing_router,
+    classes_router,
+    students_router
+    # payments_router  
+)
 
 app = FastAPI(title="ṣilẹti API")
 
-# Connect routers
+# connect application routers
 app.include_router(orgs_router)
 app.include_router(auth_router)
 app.include_router(users_router)
@@ -11,7 +20,8 @@ app.include_router(fees_router)
 app.include_router(billing_router)
 app.include_router(classes_router)
 app.include_router(students_router)
-#app.include_router(payments_router)
+# app.include_router(payments_router)
+
 
 @app.get("/")
 async def root():
