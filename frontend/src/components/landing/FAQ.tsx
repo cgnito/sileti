@@ -1,3 +1,5 @@
+import { Plus } from "lucide-react";
+
 const faqs = [
   {
     question: "How secure is our school data?",
@@ -18,27 +20,39 @@ const faqs = [
 
 export function FAQ() {
   return (
-    <section id="faq" className="py-24 bg-surface-bright border-t border-border">
-      <div className="max-w-3xl mx-auto px-4">
-        <h2 className="font-headline text-3xl font-bold text-center mb-16">
-          Common questions
-        </h2>
-        <div className="space-y-6">
+    <section id="faq" className="py-24 md:py-32 bg-surface relative overflow-hidden border-t border-border/40">
+      <div className="max-w-3xl mx-auto px-4 md:px-6">
+        {/* Header Block */}
+        <div className="text-center mb-20 space-y-3">
+          <h2 className="font-headline text-3xl md:text-4xl font-bold tracking-tight text-on-surface">
+            Common questions
+          </h2>
+          <p className="font-body text-sm md:text-base text-on-surface-variant max-w-xl mx-auto leading-relaxed">
+            Everything you need to know about setting up your workspace on ṣilẹti.
+          </p>
+        </div>
+
+        {/* Minimalist Accordion Row Assemblies */}
+        <div className="divide-y divide-border/60 border-t border-b border-border/60">
           {faqs.map((faq, i) => (
             <details
               key={faq.question}
-              className="group border border-border rounded-xl bg-card transition-all"
+              className="group bg-transparent transition-all duration-300 open:bg-surface-container-low/40"
               open={i === 0}
             >
-              <summary className="flex justify-between items-center p-6 cursor-pointer list-none">
-                <span className="font-headline text-lg font-bold text-on-surface">
+              <summary className="flex justify-between items-center py-6 px-4 cursor-pointer list-none select-none [&::-webkit-details-marker]:hidden">
+                <span className="font-headline text-base md:text-lg font-bold text-on-surface tracking-tight transition-colors duration-200 group-hover:text-primary">
                   {faq.question}
                 </span>
-                <span className="text-primary transition-transform group-open:rotate-180" aria-hidden>
-                  ⌄
+                <span 
+                  className="text-on-surface-variant/60 shrink-0 ml-4 transition-transform duration-300 ease-out group-open:rotate-45 group-open:text-primary" 
+                  aria-hidden
+                >
+                  <Plus className="w-4 h-4 md:w-5 md:h-5" strokeWidth={2.5} />
                 </span>
               </summary>
-              <div className="p-6 pt-0 text-muted-foreground border-t border-border/50">
+              
+              <div className="px-4 pb-6 font-body text-xs md:text-sm text-on-surface-variant leading-relaxed max-w-2xl animate-in fade-in slide-in-from-top-1 duration-200">
                 {faq.answer}
               </div>
             </details>

@@ -47,54 +47,84 @@ const plans = [
 
 export function Pricing() {
   return (
-    <section id="pricing" className="py-24 px-4 md:px-margin-desktop bg-surface-container-low border-t border-border">
+    <section id="pricing" className="py-24 md:py-32 px-4 md:px-margin-desktop bg-surface relative overflow-hidden border-t border-border/40">
       <div className="max-w-screen-xl mx-auto">
-        <div className="text-center mb-16">
-          <h2 className="font-headline text-3xl font-bold text-on-surface mb-4">
+        {/* Header Block */}
+        <div className="text-center mb-20 space-y-4">
+          <h2 className="font-headline text-3xl md:text-4xl font-bold tracking-tight text-on-surface">
             Simple, transparent pricing
           </h2>
-          <p className="font-body text-lg text-muted-foreground max-w-2xl mx-auto">
+          <p className="font-body text-sm md:text-base text-on-surface-variant max-w-xl mx-auto leading-relaxed">
             Choose the plan that fits your institution&apos;s scale and goals.
           </p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+        {/* Pricing Layout Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 lg:gap-8 items-stretch">
           {plans.map((plan) => (
             <div
               key={plan.name}
               className={
                 plan.popular
-                  ? "bg-surface-container p-10 rounded-xl border-2 border-primary relative flex flex-col h-full shadow-lg md:scale-105 z-10"
-                  : "bg-card p-10 rounded-xl border border-border flex flex-col h-full hover:shadow-md transition-shadow"
+                  ? "bg-primary text-surface p-8 md:p-10 rounded-2xl relative flex flex-col h-full shadow-xl transform hover:-translate-y-1 transition-all duration-300"
+                  : "bg-surface-container-low p-8 md:p-10 rounded-2xl border border-border flex flex-col h-full hover:shadow-xl hover:border-border/40 transform hover:-translate-y-1 transition-all duration-300"
               }
             >
+              {/* Optional Structural Badge */}
               {plan.popular && (
-                <span className="absolute -top-4 left-1/2 -translate-x-1/2 bg-primary text-on-primary text-xs px-4 py-1 rounded-full uppercase tracking-widest font-bold shadow-sm">
-                  Most popular
-                </span>
+                <div className="mb-4">
+                  <span className="inline-flex items-center bg-primary text-white text-[10px] font-label font-bold uppercase tracking-wider px-2.5 py-1 rounded-md">
+                    Most popular
+                  </span>
+                </div>
               )}
+
+              {/* Identity & Pricing Header */}
               <div className="mb-8">
-                <h3 className="font-headline text-xl font-bold text-on-surface">{plan.name}</h3>
+                <h3 className="font-headline text-lg font-bold tracking-tight opacity-90">
+                  {plan.name}
+                </h3>
                 <div className="mt-4 flex items-baseline gap-1">
-                  <span className="text-3xl font-bold">{plan.price}</span>
-                  <span className="text-muted-foreground">{plan.period}</span>
+                  <span className="text-3xl md:text-4xl font-headline font-bold tracking-tight">
+                    {plan.price}
+                  </span>
+                  <span className={plan.popular ? "text-surface-variant/80 text-xs font-body" : "text-on-surface-variant/80 text-xs font-body"}>
+                    {plan.period}
+                  </span>
                 </div>
               </div>
-              <ul className="space-y-4 mb-10">
+
+              {/* Core Offer Checklist */}
+              <ul className="space-y-3.5 mb-10 pt-6 border-t border-current/10">
                 {plan.features.map((feature) => (
                   <li
                     key={feature}
-                    className="flex items-center gap-3 text-sm text-on-surface-variant"
+                    className="flex items-start gap-3 text-xs md:text-sm font-body leading-relaxed"
                   >
-                    <Check className="w-5 h-5 text-primary shrink-0" aria-hidden />
-                    {feature}
+                    <Check 
+                      className={
+                        plan.popular 
+                          ? "w-4 h-4 text-primary shrink-0 mt-0.5" 
+                          : "w-4 h-4 text-primary shrink-0 mt-0.5"
+                      } 
+                      aria-hidden 
+                    />
+                    <span className={plan.popular ? "text-surface-variant" : "text-on-surface-variant"}>
+                      {feature}
+                    </span>
                   </li>
                 ))}
               </ul>
+
+              {/* Action Trigger Button */}
               <Button
                 href={plan.cta.href}
                 variant={plan.cta.variant}
-                className="mt-auto w-full"
+                className={`mt-auto w-full transition-colors ${
+                  plan.popular 
+                    ? "bg-surface text-on-surface hover:bg-surface-variant" 
+                    : ""
+                }`}
               >
                 {plan.cta.label}
               </Button>

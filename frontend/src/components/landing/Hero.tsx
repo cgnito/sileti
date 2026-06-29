@@ -1,8 +1,8 @@
 "use client";
 
-import Image from "next/image";
 import { useAuthStore } from "@/src/features/auth/store/useAuthStore";
-import { Button } from "@/src/components/shared/Button";
+import Image from "next/image";
+import { Button } from "../shared/Button";
 
 export function Hero() {
   const user = useAuthStore((s) => s.user);
@@ -12,50 +12,53 @@ export function Hero() {
 
   const loggedInIncomplete = !isHydrating && user && onboardingStatus === "incomplete";
 
+  // org is null until fetchMySchool() resolves.
+  const greetingName = org?.schoolName ?? user?.displayName;
+
   return (
-    <section className="relative min-h-[80vh] my-7 flex flex-col items-center justify-center text-center px-4 md:px-margin-desktop overflow-hidden bg-surface-bright pt-16">
+    <section className="relative min-h-[80vh] mt-7 flex flex-col items-center justify-center text-center px-4 md:px-margin-desktop overflow-hidden bg-surface-bright pt-16">
       <div className="max-w-4xl z-10">
-        <span className="inline-block px-4 py-1.5 mb-6 bg-secondary-container text-on-secondary-container text-xs font-label rounded-full tracking-widest uppercase">
+        <span className="inline-block px-4 py-1.5 mb-6 bg-secondary-container text-on-secondary-container text-xs font-label rounded-full tracking-widest uppercase font-semibold">
           The School OS
         </span>
 
         {loggedInIncomplete ? (
           <>
-            <h1 className="font-headline text-4xl md:text-5xl font-bold text-on-surface mb-6 leading-tight">
-              Welcome back{org ? `, ${org.name}` : ""}.
+            <h1 className="font-headline text-4xl md:text-5xl font-bold text-on-surface mb-6 leading-tight tracking-tight">
+              Welcome back{greetingName ? `, ${greetingName}` : ""}.
               <br className="hidden md:block" />
-              <span className="italic text-primary">Let&apos;s finish setting up.</span>
+              <span className="italic text-primary block mt-1">Let&apos;s finish setting up.</span>
             </h1>
-            <p className="font-body text-lg text-muted-foreground mb-10 max-w-2xl mx-auto">
+            <p className="font-body text-sm md:text-base text-muted-foreground mb-10 max-w-xl mx-auto leading-relaxed">
               You&apos;re a few steps away from collecting your first fee. Pick up
               where you left off.
             </p>
-            <div className="flex flex-col md:flex-row gap-4 justify-center">
-              <Button href="/onboarding" size="lg">
+            <div className="flex flex-col sm:flex-row gap-3 justify-center items-center">
+              <Button href="/onboarding" size="lg" className="w-full sm:w-auto">
                 Continue setup
               </Button>
-              <Button href="/dashboard" variant="secondary" size="lg">
+              <Button href="/dashboard" variant="secondary" size="lg" className="w-full sm:w-auto">
                 Go to dashboard instead
               </Button>
             </div>
           </>
         ) : (
           <>
-            <h1 className="font-headline text-4xl md:text-5xl font-bold text-on-surface mb-6 leading-tight">
+            <h1 className="font-headline text-4xl md:text-5xl font-bold text-on-surface mb-6 leading-tight tracking-tight">
               The Modern Operating System for
               <br className="hidden md:block" />{" "}
               <span className="italic text-primary">African Excellence</span>
             </h1>
-            <p className="font-body text-lg text-muted-foreground mb-10 max-w-2xl mx-auto">
+            <p className="font-body text-sm md:text-base text-muted-foreground mb-10 max-w-xl mx-auto leading-relaxed">
               Automate your finances, streamline academics, and synchronize
               operations. Empowering African educational institutions with
               world-class digital infrastructure.
             </p>
-            <div className="flex flex-col md:flex-row gap-4 justify-center">
-              <Button href="/signup" size="md">
+            <div className="flex flex-col sm:flex-row gap-3 justify-center items-center">
+              <Button href="/signup" size="md" className="w-full sm:w-auto">
                 Get started for free
               </Button>
-              <Button href="#demo" variant="secondary" size="md">
+              <Button href="#demo" variant="secondary" size="md" className="w-full sm:w-auto">
                 Book a live demo
               </Button>
             </div>
@@ -63,16 +66,18 @@ export function Hero() {
         )}
       </div>
 
-      <div className="mt-16 w-full max-w-5xl mx-auto rounded-t-3xl border-x border-t border-border bg-card shadow-2xl p-4 md:p-8 translate-y-8">
-        <div className="bg-surface-container rounded-2xl overflow-hidden border border-outline-variant aspect-video shadow-inner relative">
+      {/* Hero Display Frame */}
+      <div className="mt-16 w-full max-w-5xl mx-auto rounded-t-2xl border-x border-t border-border/80 bg-card shadow-2xl p-3 md:p-6 translate-y-8">
+        <div className="bg-surface-container rounded-xl overflow-hidden border border-outline-variant aspect-video shadow-inner relative">
           <Image
             src="/dashboard-preview.png"
             alt="ṣilẹti dashboard preview"
             fill
-            className="object-cover opacity-90"
+            className="object-cover opacity-95 select-none"
             priority
+            draggable={false}
           />
-          <div className="absolute inset-0 bg-gradient-to-t from-card/80 to-transparent" />
+          <div className="absolute inset-0 bg-gradient-to-t from-card/40 to-transparent" />
         </div>
       </div>
     </section>

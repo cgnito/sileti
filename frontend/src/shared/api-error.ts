@@ -1,7 +1,7 @@
 /**
  * Normalizes FastAPI's two error response shapes into one consistent type:
  *
- *  - Simple errors:      { "detail": "Incorrect email or password" }
+ *  - Simple errors:      { "detail": "incorrect email or password" }
  *  - Validation errors:  { "detail": [{ "loc": [...], "msg": "...", "type": "..." }] }
  *
  * Everything that calls the API should be able to catch ApiError and just
@@ -16,7 +16,7 @@ export interface FastApiValidationError {
 }
 
 export interface FieldError {
-  /** The form field this error applies to, e.g. "admin_email". Best-effort
+  /** The form field this error applies to, e.g. "school_email". Best-effort
    *  guess from the last segment of FastAPI's `loc` array. */
   field: string;
   message: string;

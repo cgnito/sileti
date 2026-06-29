@@ -1,4 +1,4 @@
-import { Receipt, Banknote, Users2, type LucideIcon } from "lucide-react";
+import { Receipt, Banknote, Users2, Check, type LucideIcon } from "lucide-react";
 
 const cards: {
   icon: LucideIcon;
@@ -35,18 +35,19 @@ const cards: {
 
 export function ValuePropositionGrid() {
   return (
-    <section id="platform" className="py-24 px-4 md:px-margin-desktop max-w-screen-xl mx-auto">
-      <div className="text-center mb-16">
-        <h2 className="font-headline text-3xl font-bold text-on-surface mb-4">
+    <section id="platform" className="py-24 md:py-32 px-4 md:px-margin-desktop  mx-auto bg-surface">
+      {/* Header Block: Deliberate Type Hierarchy */}
+      <div className="text-center mb-20 space-y-4">
+        <h2 className="font-headline text-3xl md:text-4xl font-bold tracking-tight text-on-surface max-w-2xl mx-auto leading-tight">
           Built around the one problem that actually costs schools money
         </h2>
-        <p className="font-body text-lg text-muted-foreground max-w-2xl mx-auto">
-          Fee collection, invoicing, and payment reconciliation — done right,
-          before anything else.
+        <p className="font-body text-sm md:text-base text-on-surface-variant max-w-xl mx-auto leading-relaxed">
+          Fee collection, invoicing, and payment reconciliation — done right, before anything else.
         </p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-gutter">
+      {/* Asymmetric Grid Layout Structure */}
+      <div className="grid grid-cols-1 lg:grid-cols-10 gap-6 md:gap-8 items-stretch max-w-screen-xl mx-auto">
         {cards.map((card) => {
           const Icon = card.icon;
           return (
@@ -54,43 +55,59 @@ export function ValuePropositionGrid() {
               key={card.title}
               className={
                 card.highlight
-                  ? "bg-primary-container p-10 rounded-xl border border-primary/20 shadow-sm text-on-primary-container flex flex-col h-full"
-                  : "bg-card p-10 rounded-xl border border-border shadow-sm hover:shadow-md transition-shadow flex flex-col h-full"
+                  ? "lg:col-span-4 bg-primary p-8 md:p-10 rounded-2xl border border-primary-container/20 shadow-xl text-white flex flex-col h-full transform hover:-translate-y-1 transition-all duration-300"
+                  : "lg:col-span-3 bg-surface-container-low p-8 md:p-10 rounded-2xl border border-border shadow-sm hover:shadow-xl hover:border-border/40 transform hover:-translate-y-1 transition-all duration-300 flex flex-col h-full"
               }
             >
+              {/* Icon Container Frame */}
               <div
                 className={
                   card.highlight
-                    ? "w-12 h-12 bg-white/20 rounded-full flex items-center justify-center mb-6"
-                    : "w-12 h-12 bg-primary-container/20 rounded-full flex items-center justify-center mb-6"
+                    ? "w-11 h-11 bg-white/15 rounded-xl flex items-center justify-center mb-8"
+                    : "w-11 h-11 bg-primary/5 rounded-xl flex items-center justify-center mb-8"
                 }
               >
                 <Icon
-                  className={card.highlight ? "w-6 h-6 text-on-primary" : "w-6 h-6 text-primary"}
+                  className={card.highlight ? "w-5 h-5 text-white" : "w-5 h-5 text-primary"}
                   aria-hidden
                 />
               </div>
-              <h3 className="font-headline text-xl font-bold mb-4">{card.title}</h3>
-              <p
-                className={
-                  card.highlight
-                    ? "text-on-primary/80 mb-6"
-                    : "text-muted-foreground mb-6"
-                }
-              >
-                {card.description}
-              </p>
-              <ul className="mt-auto space-y-3">
+
+              {/* Text Blocks */}
+              <div className="space-y-3 mb-8">
+                <h3 className="font-headline text-lg md:text-xl font-bold tracking-tight">
+                  {card.title}
+                </h3>
+                <p
+                  className={
+                    card.highlight
+                      ? "text-white/80 font-body text-xs md:text-sm leading-relaxed"
+                      : "text-on-surface-variant font-body text-xs md:text-sm leading-relaxed"
+                  }
+                >
+                  {card.description}
+                </p>
+              </div>
+
+              {/* Feature Points Assembly */}
+              <ul className="mt-auto space-y-3 pt-4 border-t border-current/10">
                 {card.features.map((feature) => (
                   <li
                     key={feature}
-                    className={
-                      card.highlight
-                        ? "flex items-center gap-3 text-sm font-label text-on-primary"
-                        : "flex items-center gap-3 text-sm font-label text-on-surface-variant"
-                    }
+                    className="flex items-center gap-2.5 text-xs font-label font-medium tracking-wide"
                   >
-                    <span aria-hidden>✓</span> {feature}
+                    <div
+                      className={
+                        card.highlight
+                          ? "w-4 h-4 rounded-full bg-white/20 flex items-center justify-center shrink-0"
+                          : "w-4 h-4 rounded-full bg-primary/10 flex items-center justify-center shrink-0"
+                      }
+                    >
+                      <Check className={card.highlight ? "w-2.5 h-2.5 text-white" : "w-2.5 h-2.5 text-primary"} />
+                    </div>
+                    <span className={card.highlight ? "text-white/95" : "text-on-surface"}>
+                      {feature}
+                    </span>
                   </li>
                 ))}
               </ul>

@@ -15,6 +15,14 @@ export function Navbar() {
   const isHydrating = useAuthStore((s) => s.isHydrating);
   const onboardingStatus = useAuthStore((s) => s.onboardingStatus);
 
+  // Check if an auth token or session key exists in storage.
+  // Replace 'auth-token' with whatever key your app or Zustand persist middleware uses.
+  const hasToken = typeof window !== "undefined" && !!localStorage.getItem("auth-token");
+
+  // Only show the skeleton if the store is hydrating AND a token actually exists to be validated.
+  // If there's no token, we instantly know they are a guest.
+  const showSkeleton = isHydrating && hasToken;
+
   return (
     <header className="fixed top-0 left-0 w-full z-50 bg-surface-container-low px-4 md:px-margin-desktop h-16 flex justify-between items-center">
       <div className="flex items-center gap-8">
@@ -33,8 +41,8 @@ export function Navbar() {
       </div>
 
       <div className="flex items-center gap-3">
-        {isHydrating ? (
-          // Avoid flashing the wrong state while we check localStorage / token validity.
+        {showSkeleton ? (
+          // Only flashes for returning users while Zustand finishes reading storage.
           <div className="h-9 w-24 rounded-xl bg-surface-variant/60 animate-pulse" />
         ) : !user ? (
           <>

@@ -27,33 +27,46 @@ const steps = [
 
 export function HowItWorks() {
   return (
-    <section id="how-it-works" className="py-24 bg-surface-container relative overflow-hidden">
+    <section id="how-it-works" className="py-24 md:py-32 bg-surface-bright relative overflow-hidden border-y border-border/40">
       <div className="max-w-screen-xl mx-auto px-4 md:px-margin-desktop">
-        <div className="max-w-xl mb-16">
-          <h2 className="font-headline text-3xl font-bold text-on-surface mb-4">
+        {/* Header Block */}
+        <div className="max-w-xl mb-20 space-y-3">
+          <h2 className="font-headline text-3xl md:text-4xl font-bold tracking-tight text-on-surface">
             From signup to settled invoice
           </h2>
-          <p className="font-body text-lg text-muted-foreground">
+          <p className="font-body text-sm md:text-base text-on-surface-variant leading-relaxed">
             No migration team, no sales call required. Most schools are
             billing their first class within the hour.
           </p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-10">
-          {steps.map((step) => (
-            <div key={step.number} className="relative">
+        {/* Timeline Grid Sequence */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-x-8 gap-y-12 items-start relative">
+          {steps.map((step, idx) => (
+            <div 
+              key={step.number} 
+              className="relative flex flex-col group lg:after:content-[''] lg:after:absolute lg:after:top-5 lg:after:left-[calc(100%+16px)] lg:after:w-[calc(100%-32px)] lg:after:h-[1px] lg:after:bg-border/60 last:after:hidden"
+            >
+              {/* Sequential Indicator Counter */}
               <div
-                className="text-6xl font-headline text-outline-variant/40 leading-none mb-4 select-none"
+                className="text-4xl md:text-5xl font-mono font-medium tracking-tighter text-muted-foreground/20 leading-none mb-5 select-none transition-colors duration-300 group-hover:text-primary/30"
                 aria-hidden
               >
                 {step.number}
               </div>
-              <h3 className="font-headline text-lg font-bold text-primary mb-3">
-                {step.title}
-              </h3>
-              <p className="text-sm text-on-surface-variant leading-relaxed">
-                {step.description}
-              </p>
+
+              {/* Title & Core Copy Blocks */}
+              <div className="space-y-2.5 pr-4">
+                <h3 className="font-headline text-base md:text-lg font-bold text-on-surface tracking-tight">
+                  {step.title}
+                </h3>
+                <p className="font-body text-xs md:text-sm text-on-surface-variant leading-relaxed opacity-95">
+                  {step.description}
+                </p>
+              </div>
+
+              {/* Micro Dot Layout Anchor for Mobile Separators */}
+              <div className="w-1 h-1 rounded-full bg-border mt-6 md:hidden" aria-hidden />
             </div>
           ))}
         </div>
