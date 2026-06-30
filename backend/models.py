@@ -25,6 +25,10 @@ class Organization(Base):
     
     # tracked flag for email verification status
     is_verified = Column(Boolean, default=False, nullable=False)
+
+    # onboarding state flags
+    has_setup_bank = Column(Boolean, default=False, nullable=False)
+    is_onboarding_completed = Column(Boolean, default=False, nullable=False)
     
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
@@ -32,6 +36,8 @@ class Organization(Base):
 
     # relationships
     users = relationship("User", back_populates="organization", cascade="all, delete-orphan")
+    # link to bank details record
+    bank_settlement = relationship("BankSettlement", back_populates="organization", uselist=False, cascade="all, delete-orphan")
 
     @property
     def name(self):
@@ -40,6 +46,27 @@ class Organization(Base):
     @name.setter
     def name(self, value):
         self.school_name = value
+
+
+
+class BankSettlement(Base):
+    __tablename__ = "bank_settlements"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    org_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=False, unique=True)
+    
+    bank_name = Column(String(100), nullable=False)
+    account_number = Column(String(20), nullable=False)
+    account_name = Column(String(255), nullable=False)
+    
+    # stores unique sub-account mapping created on your nomba integration dashboard
+    nomba_subaccount_id = Column(String(100), nullable=True)
+    
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    # relationships
+    organization = relationship("Organization", back_populates="bank_settlement")
 
 
 class UserRole(str, enum.Enum):
