@@ -60,3 +60,89 @@ class OrgUpdate(BaseModel):
         if v:
             return utils.sanitize_text(v)
         return v
+    
+
+# bank settlement related schemas for onboarding flow
+
+# validates incoming bank settlement setup data from the frontend dropdown and verification lookup
+class BankSettlementCreate(BaseModel):
+    bank_name: str = Field(..., min_length=2, max_length=100, examples=["Nomba Bank"])
+    
+    # enforces exactly 10 numeric digits for Nigerian NUBAN numbers
+    account_number: str = Field(
+        ..., 
+        min_length=10, 
+        max_length=10, 
+        pattern=r"^\d{10}$",
+        description="10-digit NUBAN account number", 
+        examples=["0123456789"]
+    )
+    
+    # automatically resolved from server-side bank verification lookup API
+    account_name: str = Field(..., min_length=3, max_length=255, examples=["Greenwood Academy Main"])
+
+    @field_validator('bank_name', 'account_name')
+    @classmethod
+    def clean_bank_text(cls, v: str) -> str:
+        import utils
+        return utils.sanitize_text(v)
+
+
+# outbound response formatting after successfully saving bank details
+class BankSettlementResponse(BankSettlementCreate):
+    id: UUID
+    org_id: UUID
+    nomba_subaccount_id: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
+# validates request parameters for the live real-time account name verification endpoint
+class BankAccountLookupRequest(BaseModel):
+    bank_code: str = Field(..., description="The unique code of the selected bank (e.g., '058' for GTB)")
+    account_number: str = Field(..., min_length=10, max_length=10, pattern=r"^\d{10}$")
+
+
+# formats the resolved response from Nomba API back to the frontend form layout
+class BankAccountLookupResponse(BaseModel):
+    account_number: str
+    account_name: str
+    bank_code: str
+
+
+# validates incoming modifications to existing bank settlement settings
+class BankSettlementUpdate(BaseModel):
+    bank_name: Optional[str] = Field(None, min_length=2, max_length=100, examples=["Nomba Bank"])
+    account_number: Optional[str] = Field(
+        None, 
+        min_length=10, 
+        max_length=10, 
+        pattern=r"^\d{10}$",
+        description="10-digit NUBAN account number", 
+        examples=["0123456789"]
+    )
+    account_name: Optional[str] = Field(None, min_length=3, max_length=255, examples=["Greenwood Academy Main"])
+
+    @field_validator('bank_name', 'account_name')
+    @classmethod
+    def clean_update_bank_text(cls, v: Optional[str]) -> Optional[str]:
+        if v:
+            import utils
+            return utils.sanitize_text(v)
+        return v
+
+
+# individual breakdown checkboxes tracking current wizard checklist progress
+class OnboardingStepsStatus(BaseModel):
+    email_verified: bool
+    bank_settlement: bool
+    classes_created: bool
+    students_added: bool
+    fees_configured: bool
+
+
+# master payload structure returned to the frontend dashboard guard
+class OnboardingStatusResponse(BaseModel):
+    is_completed: bool
+    steps: OnboardingStepsStatus
