@@ -38,29 +38,38 @@ export interface SileteOrg {
 }
 
 /**
- * Coarse onboarding status. The backend still has no explicit
- * "onboarding complete" flag (no field on Organization for this as of
- * the latest read) — this remains client-inferred. Revisit once/if a
- * real signal exists.
+ * Onboarding status returned by GET /orgs/onboarding-status.
+ * The backend payload uses the snake_case shape below.
  */
-export type OnboardingStatus = "incomplete" | "complete";
+export interface OnboardingStepStatus {
+  email_verified: boolean;
+  bank_settlement: boolean;
+  classes_created: boolean;
+  students_added: boolean;
+  fees_configured: boolean;
+}
+
+export interface OnboardingProgress {
+  is_completed: boolean;
+  steps: OnboardingStepStatus;
+}
 
 export interface AuthState {
   user: SileteUser | null;
   org: SileteOrg | null;
-  onboardingStatus: OnboardingStatus;
+  // Change type from OnboardingStatus string to the progress shape or null
+  onboardingProgress: OnboardingProgress | null; 
   accessToken: string | null;
-  /** True only while rehydrating/validating a persisted session on load. */
   isHydrating: boolean;
 
   setSession: (params: {
     user: SileteUser;
     org?: SileteOrg | null;
     accessToken: string;
-    onboardingStatus?: OnboardingStatus;
+    onboardingProgress?: OnboardingProgress | null;
   }) => void;
   setOrg: (org: SileteOrg | null) => void;
-  setOnboardingStatus: (status: OnboardingStatus) => void;
+  setOnboardingProgress: (progress: OnboardingProgress) => void;
   setHydrating: (value: boolean) => void;
   logout: () => void;
 }

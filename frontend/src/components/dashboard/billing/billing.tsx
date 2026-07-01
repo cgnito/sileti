@@ -1,0 +1,192 @@
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { AlertCircle, CheckCircle2, Loader2, PlusCircle } from "lucide-react";
+import { Button } from "@/src/components/shared/Button";
+import { useInvoiceActions, useInvoiceList } from "@/src/features/dashboard/billing/hooks/billing.hooks";
+import { fetchClasses } from "@/src/features/dashboard/billing/api/billing.api";
+import type { SchoolClass } from "@/src/features/dashboard/billing/types/billing.types";
+
+function formatCurrency(value: number | string | undefined | null) {
+  const numeric = typeof value === "number" ? value : Number(value ?? 0);
+  return new Intl.NumberFormat("en-NG", {
+    style: "currency",
+    currency: "NGN",
+    maximumFractionDigits: 0,
+  }).format(numeric);
+}
+
+function formatDate(value?: string | null) {
+  if (!value) return "—";
+  return new Date(value).toLocaleDateString("en-NG", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+}
+
+export default function BillingListPage() {
+  const { invoices, isLoading, error, load } = useInvoiceList();
+  const { voidClass, isLoading: isVoiding, error: voidError } = useInvoiceActions();
+  const [classes, setClasses] = useState<SchoolClass[]>([]);
+  const [classFilter, setClassFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
+  const [sessionFilter, setSessionFilter] = useState("");
+  const [termFilter, setTermFilter] = useState("");
+  const [feedback, setFeedback] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+
+    async function loadClasses() {
+      try {
+        const data = await fetchClasses();
+        if (active) setClasses(data);
+      } catch {
+        if (active) setClasses([]);
+      }
+    }
+
+    void loadClasses();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    void load({
+      class_id: classFilter || undefined,
+      status: statusFilter || undefined,
+      session: sessionFilter || undefined,
+      term: termFilter || undefined,
+    });
+  }, [classFilter, statusFilter, sessionFilter, termFilter, load]);
+
+  const selectedClass = useMemo(
+    () => classes.find((item) => item.id === classFilter),
+    [classes, classFilter],
+  );
+
+  async function handleBulkVoid() {
+    if (!selectedClass || !sessionFilter || !termFilter) {
+      setFeedback("Select a class, session, and term before voiding invoices.");
+      return;
+    }
+
+    try {
+      const result = await voidClass(selectedClass.id, sessionFilter, termFilter);
+      setFeedback(result.message);
+      await load({
+        class_id: classFilter || undefined,
+        status: statusFilter || undefined,
+        session: sessionFilter || undefined,
+        term: termFilter || undefined,
+      });
+    } catch {
+      setFeedback(voidError ?? "We could not void that class batch.");
+    }
+  }
+
+  return (
+    <div className="mx-auto flex max-w-7xl flex-col gap-6">
+      <header className="flex flex-col gap-4 rounded-xl border border-border bg-white p-6 shadow-sm md:flex-row md:items-end md:justify-between">
+        <div>
+          <p className="font-label text-[11px] uppercase tracking-[0.35em] text-primary">Billing</p>
+          <h1 className="mt-2 font-headline text-xl font-bold tracking-tight text-on-surface">Invoice workspace</h1>
+          <p className="mt-1 text-sm text-on-surface-variant">Generate invoices for your classes and manage current balances from one place.</p>
+        </div>
+        <Link href="/dashboard/billing/generate">
+          <Button className="w-full md:w-auto">
+            <PlusCircle className="h-4 w-4" />
+            Generate invoices
+          </Button>
+        </Link>
+      </header>
+
+      <section className="rounded-xl border border-border bg-white p-6 shadow-sm">
+        <div className="grid gap-4 md:grid-cols-4">
+          <label className="space-y-2 text-sm text-on-surface-variant">
+            <span className="block font-medium">Class</span>
+            <select value={classFilter} onChange={(event) => setClassFilter(event.target.value)} className="w-full rounded-lg border border-border bg-white px-3 py-2.5 text-sm text-on-surface outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/20">
+              <option value="">All classes</option>
+              {classes.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+            </select>
+          </label>
+          <label className="space-y-2 text-sm text-on-surface-variant">
+            <span className="block font-medium">Status</span>
+            <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} className="w-full rounded-lg border border-border bg-white px-3 py-2.5 text-sm text-on-surface outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/20">
+              <option value="">All statuses</option>
+              <option value="unpaid">Unpaid</option>
+              <option value="paid">Paid</option>
+              <option value="voided">Voided</option>
+            </select>
+          </label>
+          <label className="space-y-2 text-sm text-on-surface-variant">
+            <span className="block font-medium">Session</span>
+            <input value={sessionFilter} onChange={(event) => setSessionFilter(event.target.value)} className="w-full rounded-lg border border-border bg-white px-3 py-2.5 text-sm text-on-surface outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/20" placeholder="2024/2025" />
+          </label>
+          <label className="space-y-2 text-sm text-on-surface-variant">
+            <span className="block font-medium">Term</span>
+            <select value={termFilter} onChange={(event) => setTermFilter(event.target.value)} className="w-full rounded-lg border border-border bg-white px-3 py-2.5 text-sm text-on-surface outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/20">
+              <option value="">Any term</option>
+              <option value="First Term">First Term</option>
+              <option value="Second Term">Second Term</option>
+              <option value="Third Term">Third Term</option>
+            </select>
+          </label>
+        </div>
+
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+          <span className="text-xs text-on-surface-variant">This batch action voids all unpaid invoices for the selected class, session, and term.</span>
+          <Button variant="secondary" size="sm" onClick={handleBulkVoid} disabled={isVoiding || !selectedClass || !sessionFilter || !termFilter}>
+            {isVoiding ? "Voiding…" : "Void invoices for this class"}
+          </Button>
+        </div>
+
+        {feedback && <div className="mt-4 rounded-xl border border-primary/20 bg-primary/10 px-4 py-3 text-xs text-primary">{feedback}</div>}
+        {voidError && <p className="mt-3 text-xs text-error">{voidError}</p>}
+      </section>
+
+      <section className="rounded-xl border border-border bg-white p-6 shadow-sm">
+        {isLoading ? (
+          <div className="space-y-2">
+            {Array.from({ length: 4 }).map((_, index) => <div key={index} className="h-14 animate-pulse rounded-lg border border-border/70 bg-surface-container-low" />)}
+          </div>
+        ) : error ? (
+          <div className="rounded-xl border border-error/20 bg-error/10 px-4 py-3 text-xs text-error">{error}</div>
+        ) : invoices.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-border/70 bg-surface-container-low p-8 text-center text-sm text-on-surface-variant">No invoices match those filters yet. Generate a batch to populate this list.</div>
+        ) : (
+          <div className="overflow-hidden rounded-xl border border-border/70">
+            <div className="grid grid-cols-[1.4fr_0.8fr_0.8fr_0.8fr_0.6fr] bg-surface-container-low px-4 py-3 text-[11px] font-label uppercase tracking-[0.35em] text-on-surface-variant">
+              <span>Student</span>
+              <span>Class</span>
+              <span>Amount</span>
+              <span>Status</span>
+              <span>Due</span>
+            </div>
+            <div className="divide-y divide-border/70 bg-white">
+              {invoices.map((invoice) => (
+                <Link key={invoice.id} href={`/dashboard/billing/invoices/${invoice.id}`} className="grid grid-cols-[1.4fr_0.8fr_0.8fr_0.8fr_0.6fr] items-center px-4 py-4 transition-colors hover:bg-surface-container-low">
+                  <div>
+                    <p className="font-medium text-on-surface">{invoice.student?.first_name && invoice.student?.last_name ? `${invoice.student.first_name} ${invoice.student.last_name}` : `Student ${invoice.student_id.slice(0, 8)}`}</p>
+                    <p className="text-xs text-on-surface-variant">{invoice.session} · {invoice.term}</p>
+                  </div>
+                  <div className="text-sm text-on-surface-variant">{invoice.student?.class_id ? "Class assigned" : "Pending class"}</div>
+                  <div className="text-sm font-semibold text-on-surface">{formatCurrency(invoice.total_amount)}</div>
+                  <div>
+                    <span className={`inline-flex rounded-full border px-3 py-1 text-xs font-semibold ${invoice.status === "paid" ? "border-green-200 bg-green-50 text-green-700" : invoice.status === "voided" ? "border-border bg-surface-container-low text-on-surface-variant" : "border-amber-200 bg-amber-50 text-amber-700"}`}>
+                      {invoice.status}
+                    </span>
+                  </div>
+                  <div className="text-sm text-on-surface-variant">{formatDate(invoice.due_date)}</div>
+                </Link>
+              ))}
+            </div>
+          </div>
+        )}
+      </section>
+    </div>
+  );
+}

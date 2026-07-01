@@ -6,12 +6,12 @@ import Link from "next/link";
 import { Eye, EyeOff } from "lucide-react";
 import { Button } from "@/src/components/shared/Button";
 import { Logo } from "@/src/components/shared/Logo";
-import { useLogin, useFetchMySchool } from "../../features/auth/hooks/auth.hooks";
+import { fetchOnboardingStatus } from "@/src/features/auth/api/auth.api";
+import { useLogin } from "../../features/auth/hooks/auth.hooks";
 
 export default function LoginPage() {
   const router = useRouter();
   const { login, isLoading: isLoggingIn, error } = useLogin();
-  const { fetchMySchool } = useFetchMySchool();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -22,77 +22,67 @@ export default function LoginPage() {
     try {
       const user = await login(email, password);
 
-      // Login alone doesn't return school_name/short_code/slug — only
-      // fetch those for admins (GET /orgs/my-school is allow_admin_only
-      // on the backend and will 403 for a staff session).
       if (user.role === "admin") {
-        // Don't block navigation on this — it's a "nice to have" for
-        // display purposes, not required to know where to route next.
-        fetchMySchool().catch(() => {
-          // Non-fatal: dashboard can still render with the email
-          // fallback as displayName if this fails.
-        });
+        const progress = await fetchOnboardingStatus();
+        router.replace(progress.is_completed ? "/dashboard" : "/dashboard/setup");
+        return;
       }
 
-      // TODO(backend): no onboarding-complete signal exists yet, so we
-      // can't route an admin to "finish setup" vs "dashboard" with any
-      // real confidence. Sending everyone to a single destination for
-      // now rather than guessing at logic that'll be rewritten anyway.
-      router.push("/dashboard");
+      router.replace("/dashboard");
     } catch {
-      // Error is already captured in `error` from useLogin.
+      // Error is handled in the hook
     }
   }
 
   return (
     <main className="flex flex-col lg:flex-row min-h-screen bg-surface">
-     {/* Left Panel: Clean, Intentional Product Spotlight Frame */}
-<section className="hidden lg:flex lg:w-[40%] bg-surface-container-low border-r border-border relative overflow-hidden flex-col justify-between p-12 min-h-screen">
-  {/* Top Brand & Hero Block */}
-  <div className="z-10 space-y-12">
-    <Logo />
-    <div className="space-y-4 mt-6">
-      <h1 className="font-headline text-3xl font-bold tracking-tight text-on-surface leading-tight max-w-sm">
-        Run your school on autopilot.
-      </h1>
-      <p className="text-on-surface-variant font-body text-sm max-w-xs leading-relaxed opacity-90">
-        The modern operating system built for West African academic excellence and financial clarity.
-      </p>
-    </div>
-  </div>
+      {/* Left Panel: Clean, Intentional Product Spotlight Frame */}
+      <section className="hidden lg:flex lg:w-[40%] bg-surface-container-low border-r border-border relative overflow-hidden flex-col justify-between p-12 min-h-screen">
+        {/* Top Brand & Hero Block */}
+        <div className="z-10 space-y-12">
+          <Logo />
+          <div className="space-y-4 mt-6">
+            <h1 className="font-headline text-3xl font-bold tracking-tight text-on-surface leading-tight max-w-sm">
+              Run your school on autopilot.
+            </h1>
+            <p className="text-on-surface-variant font-body text-sm max-w-xs leading-relaxed opacity-90">
+              The modern operating system built for West African academic excellence and financial clarity.
+            </p>
+          </div>
+        </div>
 
-  {/* Apple-Style Showcase Window Frame - Isolated with dynamic margins to breathe */}
-  <div className="flex-1 flex items-center my-14">
-    <div className="relative w-[115%] aspect-[4/3] rounded-l-xl border border-border bg-white shadow-2xl overflow-hidden translate-x-12 transform scale-105 border-r-0 transition-all duration-300">
-      <div className="h-6 w-full bg-surface-container-low border-b border-border/60 flex items-center px-3 gap-1.5">
-        <div className="w-2 h-2 rounded-full bg-border/80" />
-        <div className="w-2 h-2 rounded-full bg-border/80" />
-        <div className="w-2 h-2 rounded-full bg-border/80" />
-      </div>
-      <img 
-        src="/images/dashboard-preview.png" 
-        alt="ṣilẹti School Operating Dashboard Preview" 
-        className="w-full h-[calc(100%-24px)] object-cover object-left-top select-none opacity-95"
-        draggable={false}
-      />
-    </div>
-  </div>
+        {/* Apple-Style Showcase Window Frame - Isolated with dynamic margins to breathe */}
+        <div className="flex-1 flex items-center my-14">
+          <div className="relative w-[115%] aspect-[4/3] rounded-l-xl border border-border bg-white shadow-2xl overflow-hidden translate-x-12 transform scale-105 border-r-0 transition-all duration-300">
+            <div className="h-6 w-full bg-surface-container-low border-b border-border/60 flex items-center px-3 gap-1.5">
+              <div className="w-2 h-2 rounded-full bg-border/80" />
+              <div className="w-2 h-2 rounded-full bg-border/80" />
+              <div className="w-2 h-2 rounded-full bg-border/80" />
+            </div>
+            <img
+              src="/images/dashboard-preview.png"
+              alt="ṣilẹti School Operating Dashboard Preview"
+              className="w-full h-[calc(100%-24px)] object-cover object-left-top select-none opacity-95"
+              draggable={false}
+            />
+          </div>
+        </div>
 
-  {/* Footer Branding Anchor */}
-  <div className="z-10 pt-4">
-    <p className="text-[10px] font-label text-muted-foreground uppercase tracking-widest font-semibold">
-      Built for African schools
-    </p>
-  </div>
+        {/* Footer Branding Anchor */}
+        <div className="z-10 pt-4">
+          <p className="text-[10px] font-label text-muted-foreground uppercase tracking-widest font-semibold">
+            Built for African schools
+          </p>
+        </div>
 
-  {/* Ambient Background Elements */}
-  <div className="absolute -bottom-24 -left-24 w-64 h-64 bg-primary-container/5 rounded-full blur-3xl pointer-events-none" />
-</section>
+        {/* Ambient Background Elements */}
+        <div className="absolute -bottom-24 -left-24 w-64 h-64 bg-primary-container/5 rounded-full blur-3xl pointer-events-none" />
+      </section>
 
 
       {/* Right Panel: Clean, Uncluttered Entry Field Block */}
       <section className="flex-1 flex flex-col justify-between p-6 md:p-12 lg:p-16 relative min-h-screen lg:min-h-0">
-        
+
         {/* Mobile View Top Branding Anchor */}
         <header className="w-full flex items-center mb-8 lg:hidden">
           <Logo />

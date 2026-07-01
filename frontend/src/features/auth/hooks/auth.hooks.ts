@@ -1,5 +1,3 @@
-
-
 import { useState, useCallback } from "react";
 import { ApiError } from "@/src/shared/api-error";
 import {
@@ -8,6 +6,7 @@ import {
   verifyEmail as verifyEmailApi,
   resendVerificationEmail as resendVerificationEmailApi,
   fetchMySchool as fetchMySchoolApi,
+  fetchOnboardingStatus as fetchOnboardingStatusApi, // New granular checkpoint api method
   type RegisterInput,
 } from "../api/auth.api";
 
@@ -126,4 +125,30 @@ export function useFetchMySchool() {
   }, []);
 
   return { fetchMySchool: run, isLoading, error };
+}
+
+/**
+ * Fetches the detailed granular step checkpoints for the school deployment wizard loops
+ * (profile, academic arms, payouts, fees) via GET /orgs/onboarding-status.
+ * Admin-only on the backend.
+ */
+export function useFetchOnboardingStatus() {
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<ApiError | null>(null);
+
+  const run = useCallback(async () => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      return await fetchOnboardingStatusApi();
+    } catch (err) {
+      const apiError = toApiError(err);
+      setError(apiError);
+      throw apiError;
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  return { fetchOnboardingStatus: run, isLoading, error };
 }

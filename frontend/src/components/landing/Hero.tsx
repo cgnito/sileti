@@ -8,9 +8,7 @@ export function Hero() {
   const user = useAuthStore((s) => s.user);
   const org = useAuthStore((s) => s.org);
   const isHydrating = useAuthStore((s) => s.isHydrating);
-  const onboardingStatus = useAuthStore((s) => s.onboardingStatus);
 
-  const loggedInIncomplete = !isHydrating && user && onboardingStatus === "incomplete";
 
   // org is null until fetchMySchool() resolves.
   const greetingName = org?.schoolName ?? user?.displayName;
@@ -22,27 +20,6 @@ export function Hero() {
           The School OS
         </span>
 
-        {loggedInIncomplete ? (
-          <>
-            <h1 className="font-headline text-4xl md:text-5xl font-bold text-on-surface mb-6 leading-tight tracking-tight">
-              Welcome back{greetingName ? `, ${greetingName}` : ""}.
-              <br className="hidden md:block" />
-              <span className="italic text-primary block mt-1">Let&apos;s finish setting up.</span>
-            </h1>
-            <p className="font-body text-sm md:text-base text-muted-foreground mb-10 max-w-xl mx-auto leading-relaxed">
-              You&apos;re a few steps away from collecting your first fee. Pick up
-              where you left off.
-            </p>
-            <div className="flex flex-col sm:flex-row gap-3 justify-center items-center">
-              <Button href="/onboarding" size="lg" className="w-full sm:w-auto">
-                Continue setup
-              </Button>
-              <Button href="/dashboard" variant="secondary" size="lg" className="w-full sm:w-auto">
-                Go to dashboard instead
-              </Button>
-            </div>
-          </>
-        ) : (
           <>
             <h1 className="font-headline text-4xl md:text-5xl font-bold text-on-surface mb-6 leading-tight tracking-tight">
               The Modern Operating System for
@@ -63,7 +40,7 @@ export function Hero() {
               </Button>
             </div>
           </>
-        )}
+       
       </div>
 
       {/* Hero Display Frame */}

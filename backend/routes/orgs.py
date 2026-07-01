@@ -236,6 +236,22 @@ def verify_bank_account_name(
 
 
 # todo
+@router.get("/bank-settlement", response_model=schemas.BankSettlementResponse | None)
+def get_bank_settlement(
+    current_admin: security.AuthContext = Depends(security.allow_admin_only),
+    db: Session = Depends(get_db)
+):
+    org = current_admin.organization
+    if not org:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="organization record missing")
+
+    settlement = db.query(models.BankSettlement).filter(models.BankSettlement.org_id == org.id).first()
+    if not settlement:
+        return None
+
+    return settlement
+
+
 @router.post("/bank-settlement", response_model=schemas.BankSettlementResponse, status_code=status.HTTP_201_CREATED)
 def setup_bank_settlement(
     bank_input: schemas.BankSettlementCreate,

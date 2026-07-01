@@ -7,11 +7,12 @@ import { ApiError } from "./api-error";
  */
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
-type JsonBody = Record<string, unknown> | unknown[];
+type JsonBody = Record<string, unknown> | unknown[] | object;
+type RequestBody = JsonBody | FormData | URLSearchParams;
 
 interface RequestOptions {
   method?: "GET" | "POST" | "PATCH" | "PUT" | "DELETE";
-  body?: JsonBody;
+  body?: RequestBody;
   /** Set true for public endpoints (login, register, verify) to skip
    *  attaching an Authorization header even if a stale token exists. */
   skipAuth?: boolean;
@@ -34,9 +35,11 @@ interface RequestOptions {
 async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const { method = "GET", body, skipAuth = false, signal } = options;
 
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-  };
+  const headers: Record<string, string> = {};
+
+  if (!(body instanceof FormData) && !(body instanceof URLSearchParams)) {
+    headers["Content-Type"] = "application/json";
+  }
 
   if (!skipAuth) {
     const token = useAuthStore.getState().accessToken;
@@ -48,7 +51,7 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
   const response = await fetch(`${API_BASE_URL}${path}`, {
     method,
     headers,
-    body: body !== undefined ? JSON.stringify(body) : undefined,
+    body: body !== undefined ? (body instanceof FormData || body instanceof URLSearchParams ? body : JSON.stringify(body)) : undefined,
     signal,
   });
 
@@ -70,13 +73,13 @@ export const apiClient = {
   get: <T>(path: string, options?: Omit<RequestOptions, "method" | "body">) =>
     request<T>(path, { ...options, method: "GET" }),
 
-  post: <T>(path: string, body?: JsonBody, options?: Omit<RequestOptions, "method" | "body">) =>
+  post: <T>(path: string, body?: RequestBody, options?: Omit<RequestOptions, "method" | "body">) =>
     request<T>(path, { ...options, method: "POST", body }),
 
-  patch: <T>(path: string, body?: JsonBody, options?: Omit<RequestOptions, "method" | "body">) =>
+  patch: <T>(path: string, body?: RequestBody, options?: Omit<RequestOptions, "method" | "body">) =>
     request<T>(path, { ...options, method: "PATCH", body }),
 
-  put: <T>(path: string, body?: JsonBody, options?: Omit<RequestOptions, "method" | "body">) =>
+  put: <T>(path: string, body?: RequestBody, options?: Omit<RequestOptions, "method" | "body">) =>
     request<T>(path, { ...options, method: "PUT", body }),
 
   delete: <T>(path: string, options?: Omit<RequestOptions, "method" | "body">) =>

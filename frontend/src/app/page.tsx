@@ -18,7 +18,7 @@ export default function LandingPage() {
   const router = useRouter();
   const user = useAuthStore((s) => s.user);
   const isHydrating = useAuthStore((s) => s.isHydrating);
-  const onboardingStatus = useAuthStore((s) => s.onboardingStatus);
+  const onboardingProgress = useAuthStore((s) => s.onboardingProgress);
 
   // A fully onboarded admin landing here (e.g. via a stale bookmark or
   // typing "/" manually) doesn't need the marketing page — send them
@@ -27,12 +27,12 @@ export default function LandingPage() {
   // "continue setup" framing instead of a hard redirect, since they
   // may have intentionally navigated here).
   useEffect(() => {
-    if (!isHydrating && user && onboardingStatus === "complete") {
+    if (!isHydrating && user && onboardingProgress?.is_completed) {
       router.replace("/dashboard");
     }
-  }, [isHydrating, user, onboardingStatus, router]);
+  }, [isHydrating, user, onboardingProgress, router]);
 
-  if (!isHydrating && user && onboardingStatus === "complete") {
+  if (!isHydrating && user && onboardingProgress?.is_completed) {
     // Avoid flashing marketing content during the redirect.
     return null;
   }

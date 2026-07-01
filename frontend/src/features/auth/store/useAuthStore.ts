@@ -24,22 +24,22 @@ export const useAuthStore = create<AuthState>()(
     (set) => ({
       user: null,
       org: null,
-      onboardingStatus: "incomplete",
+      onboardingProgress: null,
       accessToken: null,
       isHydrating: true,
 
-      setSession: ({ user, org, accessToken, onboardingStatus }) =>
+      setSession: ({ user, org, accessToken, onboardingProgress }) =>
         set({
           user,
           org: org ?? null,
           accessToken,
-          onboardingStatus: onboardingStatus ?? "incomplete",
+          onboardingProgress: onboardingProgress ?? null,
           isHydrating: false,
         }),
 
       setOrg: (org) => set({ org }),
 
-      setOnboardingStatus: (status) => set({ onboardingStatus: status }),
+      setOnboardingProgress: (progress) => set({ onboardingProgress: progress }),
 
       setHydrating: (value) => set({ isHydrating: value }),
 
@@ -48,24 +48,22 @@ export const useAuthStore = create<AuthState>()(
           user: null,
           org: null,
           accessToken: null,
-          onboardingStatus: "incomplete",
+          onboardingProgress: null,
           isHydrating: false,
         }),
     }),
     {
       name: "sileti-auth",
       storage: createJSONStorage(() => localStorage),
-      // Don't persist isHydrating — every fresh load should re-derive it.
       partialize: (state) => ({
         user: state.user,
         org: state.org,
         accessToken: state.accessToken,
-        onboardingStatus: state.onboardingStatus,
+        onboardingProgress: state.onboardingProgress,
       }),
     }
   )
 );
-
 /** Convenience selector: is anyone logged in at all? */
 export const useIsAuthenticated = () =>
   useAuthStore((s) => Boolean(s.user && s.accessToken));

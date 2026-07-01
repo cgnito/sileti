@@ -13,7 +13,6 @@ const navLinks = [
 export function Navbar() {
   const user = useAuthStore((s) => s.user);
   const isHydrating = useAuthStore((s) => s.isHydrating);
-  const onboardingStatus = useAuthStore((s) => s.onboardingStatus);
 
   // Check if an auth token or session key exists in storage.
   // Replace 'auth-token' with whatever key your app or Zustand persist middleware uses.
@@ -24,7 +23,7 @@ export function Navbar() {
   const showSkeleton = isHydrating && hasToken;
 
   return (
-    <header className="fixed top-0 left-0 w-full z-50 bg-surface-container-low px-4 md:px-margin-desktop h-16 flex justify-between items-center">
+    <header className="fixed top-0 left-0 w-full z-50 bg-surface-container-low px-4 py-10 md:px-margin-desktop h-16 flex justify-between items-center">
       <div className="flex items-center gap-8">
         <Logo />
         <nav className="hidden md:flex items-center gap-6">
@@ -46,19 +45,16 @@ export function Navbar() {
           <div className="h-9 w-24 rounded-xl bg-surface-variant/60 animate-pulse" />
         ) : !user ? (
           <>
-            <Button href="/login" variant="ghost" size="md" className="px-4 py-2">
+            <Button href="/login" variant="ghost" size="md" >
               Sign in
             </Button>
-            <Button href="/signup" size="md" className="px-5 py-2.5">
+            <Button href="/signup" size="md" className="">
               Get started
             </Button>
           </>
-        ) : onboardingStatus === "incomplete" ? (
-          <Button href="/onboarding" size="md" className="px-5 py-2.5">
-            Finish setup
-          </Button>
-        ) : (
-          <Button href="/dashboard" size="md" className="px-5 py-2.5">
+        ) 
+        : (
+          <Button href="/dashboard" size="md" className="">
             Go to dashboard
           </Button>
         )}

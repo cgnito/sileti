@@ -6,6 +6,8 @@ import Link from "next/link";
 import { Mail, Lock, CheckCircle2, XCircle } from "lucide-react";
 import { Button } from "@/src/components/shared/Button";
 import { Logo } from "@/src/components/shared/Logo";
+import { fetchOnboardingStatus } from "@/src/features/auth/api/auth.api";
+import { useAuthStore } from "@/src/features/auth/store/useAuthStore";
 import { useVerifyEmail, useResendVerification } from "../../features/auth/hooks/auth.hooks";
 
 const RESEND_COOLDOWN_SECONDS = 59;
@@ -19,6 +21,8 @@ function VerifyEmailContent() {
 
   const { verifyEmail, isLoading: isVerifying, error: verifyError } = useVerifyEmail();
   const { resend, isLoading: isResending, error: resendError, sent } = useResendVerification();
+  const user = useAuthStore((s) => s.user);
+  const accessToken = useAuthStore((s) => s.accessToken);
 
   const [verifyState, setVerifyState] = useState<"idle" | "success" | "failed">("idle");
   const [secondsLeft, setSecondsLeft] = useState(RESEND_COOLDOWN_SECONDS);
@@ -49,6 +53,21 @@ function VerifyEmailContent() {
     }
   }
 
+  async function handleContinue() {
+    if (user && accessToken) {
+      try {
+        const progress = await fetchOnboardingStatus();
+        router.replace(progress.is_completed ? "/dashboard" : "/dashboard/setup");
+        return;
+      } catch {
+        router.replace("/dashboard");
+        return;
+      }
+    }
+
+    router.push("/login");
+  }
+
   // ── Mode 1 render states: token present ────────────────────────
   if (token) {
     if (isVerifying || verifyState === "idle") {
@@ -68,8 +87,8 @@ function VerifyEmailContent() {
           title="Email verified"
           body="Your school account is active and ready to use."
           action={
-            <Button onClick={() => router.push("/login")} className="w-full !py-4">
-              Sign in to your account
+            <Button onClick={handleContinue} className="w-full !py-4">
+              {user && accessToken ? "Continue to dashboard" : "Sign in to your account"}
             </Button>
           }
         />

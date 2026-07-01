@@ -5,7 +5,7 @@ type ButtonVariant = "primary" | "secondary" | "white" | "ghost";
 
 interface BaseProps {
   variant?: ButtonVariant;
-  size?: "md" | "lg";
+  size?: "sm" | "md" | "lg";
   children: ReactNode;
   className?: string;
 }
@@ -22,6 +22,7 @@ const variantClasses: Record<ButtonVariant, string> = {
 };
 
 const sizeClasses = {
+  sm: "px-3 py-2 text-xs",
   md: "px-8 py-4 text-sm",
   lg: "px-10 py-5 text-base",
 };
