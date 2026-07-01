@@ -75,7 +75,7 @@ export function OnboardingBanner() {
   if (!user || onboardingProgress?.is_completed) return null;
 
   return (
-    <section className="rounded-2xl border border-border/80 bg-card p-6 shadow-sm">
+    <section className="rounded-[1.35rem] border border-border/70 bg-[linear-gradient(180deg,rgba(255,252,247,0.95),rgba(250,245,237,0.92))] p-6">
       <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
         <div className="space-y-2">
           <div className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-xs font-label uppercase tracking-[0.2em] text-primary">

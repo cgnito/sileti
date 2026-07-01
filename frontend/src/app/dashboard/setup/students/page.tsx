@@ -1,10 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
-import { ChevronLeft, PencilLine, Plus, Search, Trash2, Upload } from "lucide-react";
+import { PencilLine, Plus, Search, Trash2, Upload } from "lucide-react";
 import { Button } from "@/src/components/shared/Button";
 import { apiClient } from "@/src/shared/api-client";
+import { DashboardEmptyState, DashboardHero, DashboardPageShell, DashboardPanel } from "@/src/components/dashboard/PageChrome";
 
 type SchoolClass = {
   id: string;
@@ -233,75 +233,72 @@ export default function StudentsSetupPage() {
   }, [search, students]);
 
   return (
-    <div className="mx-auto flex max-w-7xl flex-col gap-6">
-      <header className="flex flex-col gap-4 rounded-xl border border-border bg-white p-6 shadow-sm md:flex-row md:items-end md:justify-between">
-        <div>
-          <Link href="/dashboard" className="inline-flex items-center gap-2 text-sm text-on-surface-variant transition-colors hover:text-primary">
-            <ChevronLeft className="h-4 w-4" />
-            Back to Dashboard
-          </Link>
-          <h1 className="mt-3 font-headline text-xl font-bold tracking-tight text-on-surface">Students</h1>
-          <p className="mt-1 text-sm text-on-surface-variant">Add students one by one or import a classroom roster from CSV.</p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Button onClick={() => void handleCreateStudent()} disabled={isSaving || !selectedClassId} className="w-full md:w-auto">
-            <Plus className="h-4 w-4" />
-            {isSaving ? "Saving…" : "Add student"}
-          </Button>
-          <Button variant="secondary" onClick={() => void handleUpload()} disabled={isSaving || !uploadFile || !selectedClassId} className="w-full md:w-auto">
-            <Upload className="h-4 w-4" />
-            Upload CSV
-          </Button>
-        </div>
-      </header>
+    <DashboardPageShell>
+      <DashboardHero
+        eyebrow="Setup"
+        title="Students"
+        description="Add students one by one or import a classroom roster from CSV."
+        action={(
+          <div className="flex flex-wrap gap-2">
+            <Button onClick={() => void handleCreateStudent()} disabled={isSaving || !selectedClassId}>
+              <Plus className="h-4 w-4" />
+              {isSaving ? "Saving…" : "Add student"}
+            </Button>
+            <Button variant="secondary" onClick={() => void handleUpload()} disabled={isSaving || !uploadFile || !selectedClassId}>
+              <Upload className="h-4 w-4" />
+              Upload CSV
+            </Button>
+          </div>
+        )}
+      />
 
-      <section className="rounded-xl border border-border bg-white p-6 shadow-sm">
+      <DashboardPanel className="grid gap-6">
         <div className="grid gap-4 md:grid-cols-[1.6fr_1fr]">
-          <div className="space-y-2">
-            <label className="mb-1 block text-xs font-semibold font-label uppercase tracking-[0.2em] text-on-surface-variant" htmlFor="student-class">Select class</label>
+          <label className="space-y-2 text-sm text-on-surface-variant">
+            <span className="block font-medium text-on-surface">Select class</span>
             <select id="student-class" value={selectedClassId} onChange={(event) => setSelectedClassId(event.target.value)} className="w-full rounded-lg border border-border bg-white px-3 py-2.5 text-sm text-on-surface outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/20">
               {isLoadingClasses ? <option value="">Loading classes…</option> : classes.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
             </select>
-          </div>
-          <div className="space-y-2">
-            <label className="mb-1 block text-xs font-semibold font-label uppercase tracking-[0.2em] text-on-surface-variant" htmlFor="student-search">Search students</label>
+          </label>
+          <label className="space-y-2 text-sm text-on-surface-variant">
+            <span className="block font-medium text-on-surface">Search students</span>
             <div className="relative">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-on-surface-variant" />
               <input id="student-search" value={search} onChange={(event) => setSearch(event.target.value)} className="w-full rounded-lg border border-border bg-white py-2.5 pl-9 pr-3 text-sm text-on-surface outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/20" placeholder="Search by name" />
             </div>
-          </div>
+          </label>
         </div>
 
-        <div className="mt-6 grid gap-4 lg:grid-cols-2">
-          <div className="space-y-2">
-            <label className="mb-1 block text-xs font-semibold font-label uppercase tracking-[0.2em] text-on-surface-variant" htmlFor="student-first-name">First name</label>
+        <div className="grid gap-4 lg:grid-cols-2">
+          <label className="space-y-2 text-sm text-on-surface-variant">
+            <span className="block font-medium text-on-surface">First name</span>
             <input id="student-first-name" value={firstName} onChange={(event) => setFirstName(event.target.value)} className="w-full rounded-lg border border-border bg-white px-3 py-2.5 text-sm text-on-surface outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/20" />
-          </div>
-          <div className="space-y-2">
-            <label className="mb-1 block text-xs font-semibold font-label uppercase tracking-[0.2em] text-on-surface-variant" htmlFor="student-last-name">Last name</label>
+          </label>
+          <label className="space-y-2 text-sm text-on-surface-variant">
+            <span className="block font-medium text-on-surface">Last name</span>
             <input id="student-last-name" value={lastName} onChange={(event) => setLastName(event.target.value)} className="w-full rounded-lg border border-border bg-white px-3 py-2.5 text-sm text-on-surface outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/20" />
-          </div>
-          <div className="space-y-2">
-            <label className="mb-1 block text-xs font-semibold font-label uppercase tracking-[0.2em] text-on-surface-variant" htmlFor="student-dob">Date of birth</label>
+          </label>
+          <label className="space-y-2 text-sm text-on-surface-variant">
+            <span className="block font-medium text-on-surface">Date of birth</span>
             <input id="student-dob" type="date" value={dateOfBirth} onChange={(event) => setDateOfBirth(event.target.value)} className="w-full rounded-lg border border-border bg-white px-3 py-2.5 text-sm text-on-surface outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/20" />
-          </div>
-          <div className="space-y-2">
-            <label className="mb-1 block text-xs font-semibold font-label uppercase tracking-[0.2em] text-on-surface-variant" htmlFor="student-parent-whatsapp">Parent WhatsApp Number</label>
+          </label>
+          <label className="space-y-2 text-sm text-on-surface-variant">
+            <span className="block font-medium text-on-surface">Parent WhatsApp Number</span>
             <input id="student-parent-whatsapp" value={parentWhatsApp} onChange={(event) => setParentWhatsApp(event.target.value)} inputMode="tel" placeholder="08031234567" className="w-full rounded-lg border border-border bg-white px-3 py-2.5 text-sm text-on-surface outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/20" />
-          </div>
-          <div className="space-y-2">
-            <label className="mb-1 block text-xs font-semibold font-label uppercase tracking-[0.2em] text-on-surface-variant" htmlFor="student-parent-email">Parent Email</label>
+          </label>
+          <label className="space-y-2 text-sm text-on-surface-variant">
+            <span className="block font-medium text-on-surface">Parent Email</span>
             <input id="student-parent-email" type="email" value={parentEmail} onChange={(event) => setParentEmail(event.target.value)} placeholder="parent@example.com" className="w-full rounded-lg border border-border bg-white px-3 py-2.5 text-sm text-on-surface outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/20" />
-          </div>
+          </label>
         </div>
 
-        {error && <p className="mt-4 text-xs text-error">{error}</p>}
-        {success && <p className="mt-4 text-xs text-primary">{success}</p>}
-      </section>
+        {error ? <p className="text-xs text-error">{error}</p> : null}
+        {success ? <p className="text-xs text-primary">{success}</p> : null}
+      </DashboardPanel>
 
-      <section className="rounded-xl border border-border bg-white p-6 shadow-sm">
-        <div className="flex items-center justify-between">
-          <h2 className="font-headline text-base font-semibold text-on-surface">Students in selected class</h2>
+      <DashboardPanel>
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <h2 className="font-headline text-lg text-on-surface">Students in selected class</h2>
           <input type="file" accept=".csv" onChange={(event) => setUploadFile(event.target.files?.[0] ?? null)} className="text-sm text-on-surface-variant" />
         </div>
         {isLoadingStudents ? (
@@ -309,7 +306,7 @@ export default function StudentsSetupPage() {
             {Array.from({ length: 4 }).map((_, index) => <div key={index} className="h-14 animate-pulse rounded-lg border border-border/70 bg-surface-container-low" />)}
           </div>
         ) : filteredStudents.length === 0 ? (
-          <div className="mt-6 rounded-xl border border-dashed border-border/70 bg-surface-container-low p-8 text-center text-sm text-on-surface-variant">No students match your current filter.</div>
+          <DashboardEmptyState className="mt-4" title="No students found" description="No students match your current filter." />
         ) : (
           <div className="mt-4 overflow-hidden rounded-xl border border-border/70">
             <div className="grid grid-cols-[1.3fr_0.8fr_1.1fr_1.1fr_0.6fr] bg-surface-container-low px-4 py-3 text-[11px] font-label uppercase tracking-[0.35em] text-on-surface-variant">
@@ -340,26 +337,26 @@ export default function StudentsSetupPage() {
                   {editingStudentId === student.id && (
                     <div className="col-span-5 mt-2 rounded-lg border border-border/70 bg-surface-container-low p-4">
                       <div className="grid gap-4 lg:grid-cols-2">
-                        <div className="space-y-2">
-                          <label className="mb-1 block text-xs font-semibold font-label uppercase tracking-[0.2em] text-on-surface-variant" htmlFor={`edit-${student.id}-first-name`}>First name</label>
+                        <label className="space-y-2 text-sm text-on-surface-variant">
+                          <span className="block font-medium text-on-surface">First name</span>
                           <input id={`edit-${student.id}-first-name`} value={editFirstName} onChange={(event) => setEditFirstName(event.target.value)} className="w-full rounded-lg border border-border bg-white px-3 py-2.5 text-sm text-on-surface outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/20" />
-                        </div>
-                        <div className="space-y-2">
-                          <label className="mb-1 block text-xs font-semibold font-label uppercase tracking-[0.2em] text-on-surface-variant" htmlFor={`edit-${student.id}-last-name`}>Last name</label>
+                        </label>
+                        <label className="space-y-2 text-sm text-on-surface-variant">
+                          <span className="block font-medium text-on-surface">Last name</span>
                           <input id={`edit-${student.id}-last-name`} value={editLastName} onChange={(event) => setEditLastName(event.target.value)} className="w-full rounded-lg border border-border bg-white px-3 py-2.5 text-sm text-on-surface outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/20" />
-                        </div>
-                        <div className="space-y-2">
-                          <label className="mb-1 block text-xs font-semibold font-label uppercase tracking-[0.2em] text-on-surface-variant" htmlFor={`edit-${student.id}-dob`}>Date of birth</label>
+                        </label>
+                        <label className="space-y-2 text-sm text-on-surface-variant">
+                          <span className="block font-medium text-on-surface">Date of birth</span>
                           <input id={`edit-${student.id}-dob`} type="date" value={editDateOfBirth} onChange={(event) => setEditDateOfBirth(event.target.value)} className="w-full rounded-lg border border-border bg-white px-3 py-2.5 text-sm text-on-surface outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/20" />
-                        </div>
-                        <div className="space-y-2">
-                          <label className="mb-1 block text-xs font-semibold font-label uppercase tracking-[0.2em] text-on-surface-variant" htmlFor={`edit-${student.id}-parent-whatsapp`}>Parent WhatsApp</label>
+                        </label>
+                        <label className="space-y-2 text-sm text-on-surface-variant">
+                          <span className="block font-medium text-on-surface">Parent WhatsApp</span>
                           <input id={`edit-${student.id}-parent-whatsapp`} value={editParentWhatsApp} onChange={(event) => setEditParentWhatsApp(event.target.value)} className="w-full rounded-lg border border-border bg-white px-3 py-2.5 text-sm text-on-surface outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/20" />
-                        </div>
-                        <div className="space-y-2">
-                          <label className="mb-1 block text-xs font-semibold font-label uppercase tracking-[0.2em] text-on-surface-variant" htmlFor={`edit-${student.id}-parent-email`}>Parent Email</label>
+                        </label>
+                        <label className="space-y-2 text-sm text-on-surface-variant">
+                          <span className="block font-medium text-on-surface">Parent Email</span>
                           <input id={`edit-${student.id}-parent-email`} type="email" value={editParentEmail} onChange={(event) => setEditParentEmail(event.target.value)} className="w-full rounded-lg border border-border bg-white px-3 py-2.5 text-sm text-on-surface outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/20" />
-                        </div>
+                        </label>
                       </div>
                       <div className="mt-4 flex flex-wrap gap-2">
                         <Button onClick={() => void handleUpdateStudent()} disabled={isSaving}>Save changes</Button>
@@ -372,7 +369,7 @@ export default function StudentsSetupPage() {
             </div>
           </div>
         )}
-      </section>
-    </div>
+      </DashboardPanel>
+    </DashboardPageShell>
   );
 }

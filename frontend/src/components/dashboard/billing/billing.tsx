@@ -7,6 +7,7 @@ import { Button } from "@/src/components/shared/Button";
 import { useInvoiceActions, useInvoiceList } from "@/src/features/dashboard/billing/hooks/billing.hooks";
 import { fetchClasses } from "@/src/features/dashboard/billing/api/billing.api";
 import type { SchoolClass } from "@/src/features/dashboard/billing/types/billing.types";
+import { DashboardEmptyState, DashboardHero, DashboardPageShell, DashboardPanel } from "@/src/components/dashboard/PageChrome";
 
 function formatCurrency(value: number | string | undefined | null) {
   const numeric = typeof value === "number" ? value : Number(value ?? 0);
@@ -89,22 +90,20 @@ export default function BillingListPage() {
   }
 
   return (
-    <div className="mx-auto flex max-w-7xl flex-col gap-6">
-      <header className="flex flex-col gap-4 rounded-xl border border-border bg-white p-6 shadow-sm md:flex-row md:items-end md:justify-between">
-        <div>
-          <p className="font-label text-[11px] uppercase tracking-[0.35em] text-primary">Billing</p>
-          <h1 className="mt-2 font-headline text-xl font-bold tracking-tight text-on-surface">Invoice workspace</h1>
-          <p className="mt-1 text-sm text-on-surface-variant">Generate invoices for your classes and manage current balances from one place.</p>
-        </div>
-        <Link href="/dashboard/billing/generate">
-          <Button className="w-full md:w-auto">
+    <DashboardPageShell>
+      <DashboardHero
+        eyebrow="Billing"
+        title="Invoice workspace"
+        description="Generate invoices for your classes and manage current balances from one place."
+        action={(
+          <Button href="/dashboard/billing/generate" size="sm" className="whitespace-nowrap">
             <PlusCircle className="h-4 w-4" />
             Generate invoices
           </Button>
-        </Link>
-      </header>
+        )}
+      />
 
-      <section className="rounded-xl border border-border bg-white p-6 shadow-sm">
+      <DashboardPanel>
         <div className="grid gap-4 md:grid-cols-4">
           <label className="space-y-2 text-sm text-on-surface-variant">
             <span className="block font-medium">Class</span>
@@ -144,19 +143,22 @@ export default function BillingListPage() {
           </Button>
         </div>
 
-        {feedback && <div className="mt-4 rounded-xl border border-primary/20 bg-primary/10 px-4 py-3 text-xs text-primary">{feedback}</div>}
+        {feedback && <div className="mt-4 rounded-[1.15rem] border border-primary/20 bg-primary/10 px-4 py-3 text-xs text-primary">{feedback}</div>}
         {voidError && <p className="mt-3 text-xs text-error">{voidError}</p>}
-      </section>
+      </DashboardPanel>
 
-      <section className="rounded-xl border border-border bg-white p-6 shadow-sm">
+      <DashboardPanel>
         {isLoading ? (
           <div className="space-y-2">
             {Array.from({ length: 4 }).map((_, index) => <div key={index} className="h-14 animate-pulse rounded-lg border border-border/70 bg-surface-container-low" />)}
           </div>
         ) : error ? (
-          <div className="rounded-xl border border-error/20 bg-error/10 px-4 py-3 text-xs text-error">{error}</div>
+          <div className="rounded-[1.25rem] border border-error/20 bg-error/10 px-4 py-3 text-xs text-error">{error}</div>
         ) : invoices.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-border/70 bg-surface-container-low p-8 text-center text-sm text-on-surface-variant">No invoices match those filters yet. Generate a batch to populate this list.</div>
+          <DashboardEmptyState
+            title="No invoices yet"
+            description="No invoices match those filters yet. Generate a batch to populate this list."
+          />
         ) : (
           <div className="overflow-hidden rounded-xl border border-border/70">
             <div className="grid grid-cols-[1.4fr_0.8fr_0.8fr_0.8fr_0.6fr] bg-surface-container-low px-4 py-3 text-[11px] font-label uppercase tracking-[0.35em] text-on-surface-variant">
@@ -186,7 +188,7 @@ export default function BillingListPage() {
             </div>
           </div>
         )}
-      </section>
-    </div>
+      </DashboardPanel>
+    </DashboardPageShell>
   );
 }

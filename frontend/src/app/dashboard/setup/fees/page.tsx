@@ -5,8 +5,10 @@ import Link from "next/link";
 import { ChevronLeft, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/src/components/shared/Button";
 import { apiClient } from "@/src/shared/api-client";
+import { DashboardEmptyState, DashboardHero, DashboardPageShell, DashboardPanel } from "@/src/components/dashboard/PageChrome";
 
 type FeeTemplateLineItem = {
+  id: string;
   name: string;
   amount: string;
   is_optional: boolean;
@@ -28,11 +30,20 @@ export default function FeesSetupPage() {
   const [templates, setTemplates] = useState<FeeTemplate[]>([]);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
-  const [lineItems, setLineItems] = useState<FeeTemplateLineItem[]>([{ name: "", amount: "", is_optional: false }]);
+  const [lineItems, setLineItems] = useState<FeeTemplateLineItem[]>([createLineItem()]);
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+
+  function createLineItem(): FeeTemplateLineItem {
+    return {
+      id: typeof crypto !== "undefined" && typeof crypto.randomUUID === "function" ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      name: "",
+      amount: "",
+      is_optional: false,
+    };
+  }
 
   async function loadTemplates() {
     setIsLoading(true);
@@ -56,11 +67,11 @@ export default function FeesSetupPage() {
   }
 
   function addLineItem() {
-    setLineItems((current) => [...current, { name: "", amount: "", is_optional: false }]);
+    setLineItems((current) => [...current, createLineItem()]);
   }
 
-  function removeLineItem(index: number) {
-    setLineItems((current) => current.filter((_, itemIndex) => itemIndex !== index));
+  function removeLineItem(lineItemId: string) {
+    setLineItems((current) => current.filter((item) => item.id !== lineItemId));
   }
 
   async function handleCreateTemplate() {
@@ -89,7 +100,7 @@ export default function FeesSetupPage() {
       });
       setName("");
       setDescription("");
-      setLineItems([{ name: "", amount: "", is_optional: false }]);
+      setLineItems([createLineItem()]);
       await loadTemplates();
       setSuccess("Fee template created successfully.");
     } catch (err) {
@@ -116,62 +127,68 @@ export default function FeesSetupPage() {
   }
 
   return (
-    <div className="mx-auto flex max-w-7xl flex-col gap-6">
-      <header className="flex flex-col gap-4 rounded-xl border border-border bg-white p-6 shadow-sm md:flex-row md:items-end md:justify-between">
-        <div>
-          <Link href="/dashboard" className="inline-flex items-center gap-2 text-sm text-on-surface-variant transition-colors hover:text-primary">
+    <DashboardPageShell>
+      <DashboardHero
+        eyebrow="Setup"
+        title="Fee templates"
+        description="Create reusable fee packages for invoice generation."
+        action={(
+          <Link href="/dashboard" className="inline-flex items-center gap-2 text-sm font-medium text-primary underline underline-offset-4">
             <ChevronLeft className="h-4 w-4" />
-            Back to Dashboard
+            Back to dashboard
           </Link>
-          <h1 className="mt-3 font-headline text-xl font-bold tracking-tight text-on-surface">Fee templates</h1>
-          <p className="mt-1 text-sm text-on-surface-variant">Create reusable fee packages for invoice generation.</p>
-        </div>
-        <Button onClick={() => void handleCreateTemplate()} disabled={isSaving} className="w-full md:w-auto">
-          <Plus className="h-4 w-4" />
-          {isSaving ? "Saving…" : "Create template"}
-        </Button>
-      </header>
+        )}
+      />
 
-      <section className="rounded-xl border border-border bg-white p-6 shadow-sm">
-        <div className="space-y-2">
-          <label className="mb-1 block text-xs font-semibold font-label uppercase tracking-[0.2em] text-on-surface-variant" htmlFor="template-name">Template name</label>
-          <input id="template-name" value={name} onChange={(event) => setName(event.target.value)} className="w-full rounded-lg border border-border bg-white px-3 py-2.5 text-sm text-on-surface outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/20" placeholder="First Term - JSS1 Standard Package" />
-        </div>
-        <div className="mt-4 space-y-2">
-          <label className="mb-1 block text-xs font-semibold font-label uppercase tracking-[0.2em] text-on-surface-variant" htmlFor="template-description">Description</label>
-          <input id="template-description" value={description} onChange={(event) => setDescription(event.target.value)} className="w-full rounded-lg border border-border bg-white px-3 py-2.5 text-sm text-on-surface outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/20" placeholder="Optional description" />
+      <DashboardPanel className="grid gap-6">
+        <div className="grid gap-4 md:grid-cols-2">
+          <label className="space-y-2 text-sm text-on-surface-variant">
+            <span className="block font-medium text-on-surface">Template name</span>
+            <input id="template-name" value={name} onChange={(event) => setName(event.target.value)} className="w-full rounded-lg border border-border bg-white px-3 py-2.5 text-sm text-on-surface outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/20" placeholder="First Term - JSS1 Standard Package" />
+          </label>
+          <label className="space-y-2 text-sm text-on-surface-variant">
+            <span className="block font-medium text-on-surface">Description</span>
+            <input id="template-description" value={description} onChange={(event) => setDescription(event.target.value)} className="w-full rounded-lg border border-border bg-white px-3 py-2.5 text-sm text-on-surface outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/20" placeholder="Optional description" />
+          </label>
         </div>
 
-        <div className="mt-6 space-y-3">
+        <div className="space-y-3">
           <div className="flex items-center justify-between">
-            <h2 className="font-headline text-base font-semibold text-on-surface">Line items</h2>
-            <button onClick={addLineItem} className="text-sm font-medium text-primary">Add row</button>
+            <h2 className="font-headline text-lg text-on-surface">Line items</h2>
+            <button type="button" onClick={addLineItem} className="text-sm font-medium text-primary">Add row</button>
           </div>
           {lineItems.map((item, index) => (
-            <div key={`${index}-${item.name}`} className="grid gap-3 rounded-xl border border-border/70 bg-surface-container-low p-4 md:grid-cols-[2fr_1fr_auto_auto]">
+            <div key={item.id} className="grid gap-3 rounded-xl border border-border/70 bg-surface-container-low p-4 md:grid-cols-[2fr_1fr_auto_auto]">
               <input value={item.name} onChange={(event) => updateLineItem(index, "name", event.target.value)} className="rounded-lg border border-border bg-white px-3 py-2.5 text-sm text-on-surface outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/20" placeholder="Tuition fee" />
               <input type="number" min="0" step="0.01" value={item.amount} onChange={(event) => updateLineItem(index, "amount", event.target.value)} className="rounded-lg border border-border bg-white px-3 py-2.5 text-sm text-on-surface outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/20" placeholder="150000" />
               <label className="flex items-center gap-2 text-sm text-on-surface-variant">
                 <input type="checkbox" checked={item.is_optional} onChange={(event) => updateLineItem(index, "is_optional", event.target.checked)} />
                 Optional
               </label>
-              <button onClick={() => removeLineItem(index)} className="text-sm font-medium text-on-surface-variant">Remove</button>
+              <button type="button" onClick={() => removeLineItem(item.id)} className="text-sm font-medium text-on-surface-variant">Remove</button>
             </div>
           ))}
         </div>
 
-        {error && <p className="mt-4 text-xs text-error">{error}</p>}
-        {success && <p className="mt-4 text-xs text-primary">{success}</p>}
-      </section>
+        {error ? <p className="text-xs text-error">{error}</p> : null}
+        {success ? <p className="text-xs text-primary">{success}</p> : null}
 
-      <section className="rounded-xl border border-border bg-white p-6 shadow-sm">
-        <h2 className="font-headline text-base font-semibold text-on-surface">Existing templates</h2>
+        <div className="flex justify-start">
+          <Button onClick={() => void handleCreateTemplate()} disabled={isSaving}>
+            <Plus className="h-4 w-4" />
+            {isSaving ? "Saving…" : "Create template"}
+          </Button>
+        </div>
+      </DashboardPanel>
+
+      <DashboardPanel>
+        <h2 className="font-headline text-lg text-on-surface">Existing templates</h2>
         {isLoading ? (
           <div className="mt-4 grid gap-4 md:grid-cols-2">
             {Array.from({ length: 4 }).map((_, index) => <div key={index} className="h-28 animate-pulse rounded-xl border border-border/70 bg-surface-container-low" />)}
           </div>
         ) : templates.length === 0 ? (
-          <div className="mt-6 rounded-xl border border-dashed border-border/70 bg-surface-container-low p-8 text-center text-sm text-on-surface-variant">No fee templates yet. Create your first package to get started.</div>
+          <DashboardEmptyState className="mt-4" title="No fee templates yet" description="Create your first package to get started." />
         ) : (
           <div className="mt-4 grid gap-4 md:grid-cols-2">
             {templates.map((template) => {
@@ -204,7 +221,7 @@ export default function FeesSetupPage() {
             })}
           </div>
         )}
-      </section>
-    </div>
+      </DashboardPanel>
+    </DashboardPageShell>
   );
 }

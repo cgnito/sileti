@@ -3,10 +3,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ChevronLeft } from "lucide-react";
+import { AlertCircle, ChevronLeft, Landmark, Search, ShieldCheck } from "lucide-react";
 import { Button } from "@/src/components/shared/Button";
 import { apiClient } from "@/src/shared/api-client";
 import { fetchOnboardingStatus } from "@/src/features/auth/api/auth.api";
+import { DashboardHero, DashboardPageShell, DashboardPanel } from "@/src/components/dashboard/PageChrome";
 
 type BankOption = {
   bank_name: string;
@@ -156,22 +157,26 @@ export default function BankSetupPage() {
   }
 
   return (
-    <div className="mx-auto flex max-w-5xl flex-col gap-6">
-      <header className="rounded-xl border border-border bg-white p-6 shadow-sm">
-        <Link href="/dashboard" className="inline-flex items-center gap-2 text-sm text-on-surface-variant transition-colors hover:text-primary">
-          <ChevronLeft className="h-4 w-4" />
-          Back to Dashboard
-        </Link>
-        <h1 className="mt-3 font-headline text-xl font-bold tracking-tight text-on-surface">{isEditing ? "Update bank details" : "Add bank details"}</h1>
-        <p className="mt-1 text-sm text-on-surface-variant">Connect your payout details so your onboarding checklist can be completed.</p>
-      </header>
+    <DashboardPageShell className="max-w-5xl">
+      <DashboardHero
+        eyebrow="Setup"
+        title={isEditing ? "Update bank details" : "Add bank details"}
+        description="Connect your payout details so your onboarding checklist can be completed."
+        action={(
+          <Link href="/dashboard" className="inline-flex items-center gap-2 text-sm font-medium text-primary underline underline-offset-4">
+            <ChevronLeft className="h-4 w-4" />
+            Back to dashboard
+          </Link>
+        )}
+      />
 
-      <section className="rounded-xl border border-border bg-white p-6 shadow-sm">
-        <div className="space-y-4">
-          <div className="space-y-2">
-            <label className="mb-1 block text-xs font-semibold font-label uppercase tracking-[0.2em] text-on-surface-variant" htmlFor="bank-search">
+      <DashboardPanel className="grid gap-6">
+        <div className="grid gap-4 md:grid-cols-[1.1fr_0.9fr]">
+          <label className="space-y-2 text-sm text-on-surface-variant">
+            <span className="inline-flex items-center gap-2 font-medium text-on-surface">
+              <Search className="h-4 w-4 text-primary" />
               Search bank
-            </label>
+            </span>
             <input
               id="bank-search"
               type="text"
@@ -180,7 +185,7 @@ export default function BankSetupPage() {
               placeholder="Start typing a bank name"
               className="w-full rounded-lg border border-border bg-white px-3 py-2.5 text-sm text-on-surface outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/20"
             />
-            {search && filteredBanks.length > 0 && (
+            {search && filteredBanks.length > 0 ? (
               <select
                 className="w-full rounded-lg border border-border bg-white px-3 py-2.5 text-sm text-on-surface outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/20"
                 value={selectedBankCode}
@@ -193,13 +198,14 @@ export default function BankSetupPage() {
                   </option>
                 ))}
               </select>
-            )}
-          </div>
+            ) : null}
+          </label>
 
-          <div className="space-y-2">
-            <label className="mb-1 block text-xs font-semibold font-label uppercase tracking-[0.2em] text-on-surface-variant" htmlFor="account-number">
+          <label className="space-y-2 text-sm text-on-surface-variant">
+            <span className="inline-flex items-center gap-2 font-medium text-on-surface">
+              <Landmark className="h-4 w-4 text-primary" />
               Account number
-            </label>
+            </span>
             <input
               id="account-number"
               inputMode="numeric"
@@ -209,25 +215,33 @@ export default function BankSetupPage() {
               placeholder="0123456789"
               className="w-full rounded-lg border border-border bg-white px-3 py-2.5 text-sm text-on-surface outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/20"
             />
-          </div>
-
-          <div className="rounded-xl border border-border/70 bg-surface-container-low px-4 py-3 text-sm text-on-surface-variant">
-            <span className="font-semibold text-on-surface">Resolved account name</span>
-            <p className="mt-1 min-h-6">
-              {isLookingUp ? "Verifying account…" : accountName || "Enter a valid account number and choose a bank to verify the account name."}
-            </p>
-          </div>
-
-          {error && <p className="text-xs text-error">{error}</p>}
-          {success && <p className="text-xs text-primary">{success}</p>}
-
-          <div className="flex flex-wrap gap-2">
-            <Button onClick={handleSave} disabled={isSaving || !accountName}>
-              {isSaving ? "Saving…" : isEditing ? "Update bank details" : "Save bank settlement"}
-            </Button>
-          </div>
+          </label>
         </div>
-      </section>
-    </div>
+
+        <div className="rounded-[1.15rem] border border-border/70 bg-surface-container-low px-4 py-4 text-sm text-on-surface-variant">
+          <span className="inline-flex items-center gap-2 font-semibold text-on-surface">
+            <ShieldCheck className="h-4 w-4 text-primary" />
+            Resolved account name
+          </span>
+          <p className="mt-1 min-h-6">
+            {isLookingUp ? "Verifying account…" : accountName || "Enter a valid account number and choose a bank to verify the account name."}
+          </p>
+        </div>
+
+        {error ? (
+          <div className="rounded-[1.15rem] border border-error/20 bg-error/10 px-4 py-3 text-sm text-error">
+            <AlertCircle className="mr-2 inline h-4 w-4" />
+            {error}
+          </div>
+        ) : null}
+        {success ? <p className="text-sm text-primary">{success}</p> : null}
+
+        <div className="flex flex-wrap gap-2">
+          <Button onClick={handleSave} disabled={isSaving || !accountName}>
+            {isSaving ? "Saving…" : isEditing ? "Update bank details" : "Save bank settlement"}
+          </Button>
+        </div>
+      </DashboardPanel>
+    </DashboardPageShell>
   );
 }

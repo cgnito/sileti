@@ -6,13 +6,13 @@ import Link from "next/link";
 import { AlertCircle, CheckCircle2, Loader2, PlusCircle } from "lucide-react";
 import { Button } from "@/src/components/shared/Button";
 import { useBillingData, useGenerateBilling } from "@/src/features/dashboard/billing/hooks/billing.hooks";
-import type { FeeTemplate, SchoolClass } from "@/src/features/dashboard/billing/types/billing.types";
 import { fetchStudents } from "@/src/features/dashboard/billing/api/billing.api";
 import type { StudentSummary } from "@/src/features/dashboard/billing/types/billing.types";
+import { DashboardHero, DashboardPageShell, DashboardPanel } from "@/src/components/dashboard/PageChrome";
 
 export default function BillingGeneratePage() {
   const router = useRouter();
-  const { classes, templates, isLoading: isLoadingData, error: loadError } = useBillingData();
+  const { classes, templates, load, isLoading: isLoadingData, error: loadError } = useBillingData();
   const { run, isLoading: isGenerating, error: submitError } = useGenerateBilling();
 
   const [selectedClass, setSelectedClass] = useState("");
@@ -65,6 +65,10 @@ export default function BillingGeneratePage() {
     [template],
   );
 
+  useEffect(() => {
+    void load();
+  }, [load]);
+
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
     if (!selectedClass || !selectedTemplate || !session || !term) {
@@ -105,15 +109,15 @@ export default function BillingGeneratePage() {
   }
 
   return (
-    <main className="min-h-screen bg-background px-6 py-8 md:px-10 lg:px-16">
-      <div className="mx-auto flex max-w-5xl flex-col gap-6">
-        <header className="rounded-2xl border border-border/80 bg-card p-6 shadow-sm">
-          <p className="font-label text-xs uppercase tracking-[0.25em] text-primary">Billing</p>
-          <h1 className="mt-2 font-headline text-3xl text-on-surface">Generate invoices</h1>
-          <p className="mt-3 text-sm text-on-surface-variant">Create a new billing batch for a class using an existing fee template.</p>
-        </header>
+    <DashboardPageShell className="max-w-5xl">
+      <DashboardHero
+        eyebrow="Billing"
+        title="Generate invoices"
+        description="Create a new billing batch for a class using an existing fee template."
+      />
 
-        <form onSubmit={handleSubmit} className="rounded-2xl border border-border/80 bg-card p-6 shadow-sm">
+      <DashboardPanel>
+        <form onSubmit={handleSubmit} className="grid gap-6">
           <div className="grid gap-4 md:grid-cols-2">
             <label className="space-y-2 text-sm text-on-surface-variant">
               <span className="block font-medium">Class</span>
@@ -239,7 +243,7 @@ export default function BillingGeneratePage() {
             </Link>
           </div>
         </form>
-      </div>
-    </main>
+      </DashboardPanel>
+    </DashboardPageShell>
   );
 }

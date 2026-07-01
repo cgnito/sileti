@@ -5,6 +5,7 @@ import Link from "next/link";
 import { ChevronLeft, PencilLine, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/src/components/shared/Button";
 import { apiClient } from "@/src/shared/api-client";
+import { DashboardEmptyState, DashboardHero, DashboardPageShell, DashboardPanel } from "@/src/components/dashboard/PageChrome";
 
 type SchoolClass = {
   id: string;
@@ -99,50 +100,57 @@ export default function ClassesSetupPage() {
   }
 
   return (
-    <div className="mx-auto flex max-w-6xl flex-col gap-6">
-      <header className="flex flex-col gap-4 rounded-xl border border-border bg-white p-6 shadow-sm md:flex-row md:items-end md:justify-between">
-        <div>
-          <Link href="/dashboard" className="inline-flex items-center gap-2 text-sm text-on-surface-variant transition-colors hover:text-primary">
+    <DashboardPageShell>
+      <DashboardHero
+        eyebrow="Setup"
+        title="Classes"
+        description="Create and manage the academic arms used by your school."
+        action={(
+          <Link href="/dashboard" className="inline-flex items-center gap-2 text-sm font-medium text-primary underline underline-offset-4">
             <ChevronLeft className="h-4 w-4" />
-            Back to Dashboard
+            Back to dashboard
           </Link>
-          <h1 className="mt-3 font-headline text-xl font-bold tracking-tight text-on-surface">Classes</h1>
-          <p className="mt-1 text-sm text-on-surface-variant">Create and manage the academic arms used by your school.</p>
-        </div>
-        <Button onClick={handleCreate} disabled={isSaving} className="w-full md:w-auto">
-          <Plus className="h-4 w-4" />
-          {isSaving ? "Saving…" : "Add class"}
-        </Button>
-      </header>
+        )}
+      />
 
-      <section className="rounded-xl border border-border bg-white p-6 shadow-sm">
+      <DashboardPanel className="grid gap-4">
         <div className="grid gap-4 md:grid-cols-[2fr_1fr]">
-          <div className="space-y-2">
-            <label className="mb-1 block text-xs font-semibold font-label uppercase tracking-[0.2em] text-on-surface-variant" htmlFor="class-name">Class name</label>
+          <label className="space-y-2 text-sm text-on-surface-variant">
+            <span className="block font-medium text-on-surface">Class name</span>
             <input id="class-name" value={name} onChange={(event) => setName(event.target.value)} className="w-full rounded-lg border border-border bg-white px-3 py-2.5 text-sm text-on-surface outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/20" placeholder="JSS 1 Gold" />
-          </div>
-          <div className="space-y-2">
-            <label className="mb-1 block text-xs font-semibold font-label uppercase tracking-[0.2em] text-on-surface-variant" htmlFor="class-level">Level</label>
+          </label>
+          <label className="space-y-2 text-sm text-on-surface-variant">
+            <span className="block font-medium text-on-surface">Level</span>
             <input id="class-level" type="number" min="1" max="20" value={level} onChange={(event) => setLevel(event.target.value)} className="w-full rounded-lg border border-border bg-white px-3 py-2.5 text-sm text-on-surface outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/20" />
-          </div>
+          </label>
         </div>
-        {error && <p className="mt-4 text-xs text-error">{error}</p>}
-      </section>
+        {error ? <p className="text-xs text-error">{error}</p> : null}
+        <div className="flex justify-start">
+          <Button onClick={handleCreate} disabled={isSaving}>
+            <Plus className="h-4 w-4" />
+            {isSaving ? "Saving…" : "Add class"}
+          </Button>
+        </div>
+      </DashboardPanel>
 
-      <section className="rounded-xl border border-border bg-white p-6 shadow-sm">
-        <h2 className="font-headline text-base font-semibold text-on-surface">Existing classes</h2>
+      <DashboardPanel>
+        <h2 className="font-headline text-lg text-on-surface">Existing classes</h2>
         {isLoading ? (
           <div className="mt-4 space-y-2">
             {Array.from({ length: 3 }).map((_, index) => <div key={index} className="h-14 animate-pulse rounded-lg border border-border/70 bg-surface-container-low" />)}
           </div>
         ) : classes.length === 0 ? (
-          <div className="mt-6 rounded-xl border border-dashed border-border/70 bg-surface-container-low p-8 text-center">
-            <p className="text-sm text-on-surface">No classes yet. Add your first class to get started.</p>
-            <Button onClick={handleCreate} className="mt-4" disabled={isSaving}>
-              <Plus className="h-4 w-4" />
-              Create class
-            </Button>
-          </div>
+          <DashboardEmptyState
+            className="mt-4"
+            title="No classes yet"
+            description="Add your first class to get started."
+            action={(
+              <Button onClick={handleCreate} disabled={isSaving}>
+                <Plus className="h-4 w-4" />
+                Create class
+              </Button>
+            )}
+          />
         ) : (
           <div className="mt-4 overflow-hidden rounded-xl border border-border/70">
             <div className="grid grid-cols-[1.5fr_0.8fr_0.8fr] bg-surface-container-low px-4 py-3 text-[11px] font-label uppercase tracking-[0.35em] text-on-surface-variant">
@@ -183,7 +191,7 @@ export default function ClassesSetupPage() {
             </div>
           </div>
         )}
-      </section>
-    </div>
+      </DashboardPanel>
+    </DashboardPageShell>
   );
 }

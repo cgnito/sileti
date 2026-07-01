@@ -7,6 +7,7 @@ import { CheckCircle2, Circle, FileText, Landmark, Users, Wallet } from "lucide-
 import { apiClient } from "@/src/shared/api-client";
 import { fetchOnboardingStatus } from "@/src/features/auth/api/auth.api";
 import { useAuthStore } from "@/src/features/auth/store/useAuthStore";
+import { DashboardHero, DashboardPageShell, DashboardPanel } from "@/src/components/dashboard/PageChrome";
 
 type OnboardingStatus = {
   is_completed: boolean;
@@ -37,6 +38,7 @@ export default function DashboardPage() {
   const router = useRouter();
   const user = useAuthStore((s) => s.user);
   const isHydrating = useAuthStore((s) => s.isHydrating);
+  const isAdmin = user?.role === "admin";
   const [onboarding, setOnboarding] = useState<OnboardingStatus | null>(null);
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -50,24 +52,52 @@ export default function DashboardPage() {
 
   useEffect(() => {
     if (!user) return;
+    let active = true;
 
     async function loadDashboard() {
+      setIsLoading(true);
+      setError(null);
+      setOnboarding(null);
+      setStats(null);
+
       try {
-        const [status, metrics] = await Promise.all([
-          fetchOnboardingStatus(),
-          apiClient.get<DashboardStats>("/billing/dashboard-metrics"),
-        ]);
-        setOnboarding(status);
-        setStats(metrics);
+        const metricsPromise = apiClient.get<DashboardStats>("/billing/dashboard-metrics");
+        const onboardingPromise = isAdmin ? fetchOnboardingStatus() : Promise.resolve(null);
+
+        const [onboardingResult, metricsResult] = await Promise.allSettled([onboardingPromise, metricsPromise]);
+
+        if (!active) return;
+
+        if (onboardingResult.status === "fulfilled" && onboardingResult.value) {
+          setOnboarding(onboardingResult.value);
+        }
+
+        if (metricsResult.status === "fulfilled") {
+          setStats(metricsResult.value);
+        }
+
+        if (isAdmin && onboardingResult.status === "rejected") {
+          setError(onboardingResult.reason instanceof Error ? onboardingResult.reason.message : "We could not load your dashboard.");
+        } else if (metricsResult.status === "rejected") {
+          setError(null);
+        }
       } catch (err) {
-        setError(err instanceof Error ? err.message : "We could not load your dashboard.");
+        if (active) {
+          setError(err instanceof Error ? err.message : "We could not load your dashboard.");
+        }
       } finally {
-        setIsLoading(false);
+        if (active) {
+          setIsLoading(false);
+        }
       }
     }
 
     void loadDashboard();
-  }, [user]);
+
+    return () => {
+      active = false;
+    };
+  }, [isAdmin, user]);
 
   const completedSteps = useMemo(() => {
     if (!onboarding) return 0;
@@ -80,15 +110,15 @@ export default function DashboardPage() {
   const greeting = new Intl.DateTimeFormat("en", { weekday: "long", month: "long", day: "numeric" }).format(new Date());
 
   return (
-    <div className="mx-auto flex max-w-7xl flex-col gap-6">
-      <header className="rounded-xl border border-border bg-white p-6 shadow-sm">
-        <p className="font-label text-[11px] uppercase tracking-[0.35em] text-primary">Overview</p>
-        <h1 className="mt-2 font-headline text-2xl font-bold tracking-tight text-on-surface">Good morning, {user.displayName}</h1>
-        <p className="mt-1 text-sm text-on-surface-variant">{greeting}</p>
-      </header>
+    <DashboardPageShell>
+      <DashboardHero
+        eyebrow="Overview"
+        title={`Good morning, ${user.displayName}`}
+        description={greeting}
+      />
 
-      {!onboarding?.is_completed && (
-        <section className="rounded-xl border border-border bg-white p-6 shadow-sm">
+      {isAdmin && onboarding && !onboarding.is_completed && (
+        <DashboardPanel>
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div>
               <p className="font-semibold text-on-surface">Complete your school setup</p>
@@ -122,19 +152,19 @@ export default function DashboardPage() {
               );
             })}
           </div>
-        </section>
+        </DashboardPanel>
       )}
 
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         {isLoading ? (
           Array.from({ length: 4 }).map((_, index) => <div key={index} className="h-28 animate-pulse rounded-xl border border-border bg-white" />)
         ) : error ? (
-          <div className="rounded-xl border border-error/20 bg-error/10 p-4 text-xs text-error md:col-span-4">{error}</div>
+          <div className="rounded-[1.25rem] border border-error/20 bg-error/10 p-4 text-xs text-error md:col-span-4">{error}</div>
         ) : (
           statCards.map((card) => {
             const Icon = card.icon;
             return (
-              <div key={card.key} className="rounded-xl border border-border bg-white p-5 shadow-sm">
+              <DashboardPanel key={card.key} className="p-5">
                 <div className="flex items-start justify-between">
                   <div>
                     <p className="font-headline text-3xl font-bold tracking-tight text-on-surface">{stats?.[card.key] ?? 0}</p>
@@ -142,11 +172,11 @@ export default function DashboardPage() {
                   </div>
                   <Icon className="h-5 w-5 text-on-surface-variant/40" />
                 </div>
-              </div>
+              </DashboardPanel>
             );
           })
         )}
       </section>
-    </div>
+    </DashboardPageShell>
   );
 }

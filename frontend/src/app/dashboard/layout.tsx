@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { type LucideIcon } from "lucide-react";
 import {
   FileText,
   GraduationCap,
@@ -18,10 +19,22 @@ import {
   X,
 } from "lucide-react";
 import { Logo } from "@/src/components/shared/Logo";
-import { fetchMySchool, logout as logoutUser } from "@/src/features/auth/api/auth.api";
+import { fetchMySchool, fetchOnboardingStatus, logout as logoutUser } from "@/src/features/auth/api/auth.api";
 import { useAuthStore } from "@/src/features/auth/store/useAuthStore";
 
-const navGroups = [
+type NavItem = {
+  label: string;
+  href: string;
+  icon: LucideIcon;
+  adminOnly?: boolean;
+};
+
+type NavGroup = {
+  title: string;
+  items: NavItem[];
+};
+
+const navGroups: NavGroup[] = [
   {
     title: "Overview",
     items: [{ label: "Dashboard", href: "/dashboard", icon: LayoutDashboard }],
@@ -29,7 +42,7 @@ const navGroups = [
   {
     title: "Setup",
     items: [
-      { label: "Bank Settlement", href: "/dashboard/setup/bank", icon: Landmark },
+      { label: "Bank Settlement", href: "/dashboard/setup/bank", icon: Landmark, adminOnly: true },
       { label: "Classes", href: "/dashboard/setup/classes", icon: GraduationCap },
       { label: "Students", href: "/dashboard/setup/students", icon: Users },
       { label: "Fee Templates", href: "/dashboard/setup/fees", icon: FileText },
@@ -45,11 +58,18 @@ const navGroups = [
   {
     title: "Staff",
     items: [
-      { label: "Staff Members", href: "/dashboard/staff", icon: UserCog },
-      { label: "Invite Staff", href: "/dashboard/staff/invite", icon: UserPlus },
+      { label: "Staff Members", href: "/dashboard/staff", icon: UserCog, adminOnly: true },
+      { label: "Invite Staff", href: "/dashboard/staff/invite", icon: UserPlus, adminOnly: true },
     ],
   },
-] as const;
+];
+
+function isActiveNavItem(pathname: string, href: string) {
+  if (href === "/dashboard") return pathname === href;
+  if (href === "/dashboard/billing") return pathname === href || pathname.startsWith("/dashboard/billing/invoices/");
+  if (href === "/dashboard/staff") return pathname === href || (pathname.startsWith("/dashboard/staff/") && !pathname.startsWith("/dashboard/staff/invite"));
+  return pathname === href;
+}
 
 export default function DashboardLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname();
@@ -60,11 +80,50 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
     org: state.org,
     accessToken: state.accessToken,
   }));
+  const onboardingProgress = useAuthStore((state) => state.onboardingProgress);
+  const isAdmin = user?.role === "admin";
+
+  const visibleNavGroups = useMemo(
+    () =>
+      navGroups
+        .map((group) => ({
+          ...group,
+          items: group.items.filter((item) => !item.adminOnly || isAdmin),
+        }))
+        .filter((group) => group.items.length > 0),
+    [isAdmin]
+  );
 
   useEffect(() => {
-    if (!user || !accessToken || org) return;
-    void fetchMySchool();
-  }, [accessToken, org, user]);
+    if (!user || !accessToken || !isAdmin) return;
+
+    async function loadAdminContext() {
+      if (!org) {
+        try {
+          await fetchMySchool();
+        } catch {
+          // The admin dashboard can still render without school metadata.
+        }
+      }
+
+      try {
+        await fetchOnboardingStatus();
+      } catch {
+        // The dashboard can still render even if onboarding status is temporarily unavailable.
+      }
+    }
+
+    void loadAdminContext();
+  }, [accessToken, isAdmin, org, user]);
+
+  useEffect(() => {
+    if (!user || !accessToken) return;
+    if (!isAdmin || !onboardingProgress) return;
+
+    if (!onboardingProgress.is_completed && pathname === "/dashboard") {
+      router.replace("/dashboard/setup");
+    }
+  }, [accessToken, isAdmin, onboardingProgress, pathname, router, user]);
 
   const schoolName = useMemo(() => org?.schoolName ?? user?.displayName ?? "Your school", [org, user]);
 
@@ -74,9 +133,12 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
   }
 
   return (
-    <div className="min-h-screen bg-surface">
+    <div className="relative min-h-screen bg-[linear-gradient(180deg,rgba(255,241,231,0.62),rgba(245,241,230,1))]">
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(121,84,46,0.09),transparent_30%),radial-gradient(circle_at_top_right,rgba(101,94,77,0.06),transparent_24%),radial-gradient(circle_at_bottom_left,rgba(238,189,142,0.12),transparent_22%)]" />
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-border/70 to-transparent" />
+
       <aside
-        className={`fixed inset-y-0 left-0 z-40 w-60 border-r border-white/10 bg-on-surface px-4 py-4 transition-transform duration-200 lg:translate-x-0 ${mobileOpen ? "translate-x-0" : "-translate-x-full"}`}
+        className={`fixed inset-y-0 left-0 z-40 w-60 border-r border-white/10 bg-[linear-gradient(180deg,rgba(35,26,17,0.98),rgba(35,26,17,0.94))] px-4 py-4 backdrop-blur-xl transition-transform duration-200 lg:translate-x-0 ${mobileOpen ? "translate-x-0" : "-translate-x-full"}`}
       >
         <div className="flex items-center justify-between border-b border-white/10 pb-4">
           <Logo className="text-surface" />
@@ -86,13 +148,13 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
         </div>
 
         <div className="mt-6 space-y-6">
-          {navGroups.map((group) => (
+          {visibleNavGroups.map((group) => (
             <div key={group.title}>
               <p className="mb-2 px-3 text-[10px] font-label uppercase tracking-[0.35em] text-white/30">{group.title}</p>
               <div className="space-y-1">
                 {group.items.map((item) => {
                   const Icon = item.icon;
-                  const active = pathname === item.href || (item.href !== "/dashboard" && pathname.startsWith(item.href));
+                  const active = isActiveNavItem(pathname, item.href);
                   return (
                     <Link
                       key={item.href}
@@ -122,7 +184,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
       </aside>
 
       <div className="lg:ml-60">
-        <header className="border-b border-border/70 bg-surface/90 px-4 py-3 backdrop-blur lg:hidden">
+        <header className="border-b border-border/70 bg-surface/85 px-4 py-3 backdrop-blur-xl lg:hidden">
           <div className="flex items-center justify-between">
             <button className="rounded-md p-1.5 text-on-surface-variant transition-colors hover:bg-surface-container-low" onClick={() => setMobileOpen(true)}>
               <Menu className="h-5 w-5" />
@@ -130,7 +192,10 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
             <Logo className="text-primary" />
           </div>
         </header>
-        <main className="min-h-screen bg-surface p-6 md:p-8">{children}</main>
+        <main className="relative min-h-screen overflow-hidden p-6 md:p-8 lg:p-10">
+          <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.4),transparent_18%)]" />
+          <div className="relative z-10">{children}</div>
+        </main>
       </div>
 
       {mobileOpen ? <button className="fixed inset-0 z-30 bg-black/20 lg:hidden" onClick={() => setMobileOpen(false)} aria-label="Close navigation" /> : null}
