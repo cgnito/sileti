@@ -34,7 +34,7 @@ class StudentResponse(StudentBase):
     id: UUID
     silete_id: str
     org_id: UUID
-    class_id: UUID
+    class_id: Optional[UUID] = None
     status: str
     admission_year: int
     

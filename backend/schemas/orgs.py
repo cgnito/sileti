@@ -67,6 +67,7 @@ class OrgUpdate(BaseModel):
 # validates incoming bank settlement setup data from the frontend dropdown and verification lookup
 class BankSettlementCreate(BaseModel):
     bank_name: str = Field(..., min_length=2, max_length=100, examples=["Nomba Bank"])
+    bank_code: Optional[str] = Field(None, max_length=20, examples=["058"])
     
     # enforces exactly 10 numeric digits for Nigerian NUBAN numbers
     account_number: str = Field(
@@ -114,6 +115,7 @@ class BankAccountLookupResponse(BaseModel):
 # validates incoming modifications to existing bank settlement settings
 class BankSettlementUpdate(BaseModel):
     bank_name: Optional[str] = Field(None, min_length=2, max_length=100, examples=["Nomba Bank"])
+    bank_code: Optional[str] = Field(None, max_length=20, examples=["058"])
     account_number: Optional[str] = Field(
         None, 
         min_length=10, 
@@ -146,3 +148,35 @@ class OnboardingStepsStatus(BaseModel):
 class OnboardingStatusResponse(BaseModel):
     is_completed: bool
     steps: OnboardingStepsStatus
+
+
+class DashboardTrendPoint(BaseModel):
+    label: str
+    billed: float
+    collected: float
+
+
+class DashboardBreakdownPoint(BaseModel):
+    label: str
+    value: int
+
+
+class DashboardSummary(BaseModel):
+    students_count: int
+    classes_count: int
+    fee_templates_count: int
+    invoices_count: int
+    paid_invoices_count: int
+    unpaid_invoices_count: int
+    partially_paid_invoices_count: int
+    voided_invoices_count: int
+    total_income: float
+    total_collected: float
+    total_outstanding: float
+    collection_rate_pct: float
+
+
+class DashboardMetricsResponse(BaseModel):
+    summary: DashboardSummary
+    invoice_breakdown: list[DashboardBreakdownPoint]
+    revenue_trend: list[DashboardTrendPoint]

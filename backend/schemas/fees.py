@@ -76,6 +76,27 @@ class FeeTemplateCreate(FeeTemplateBase):
     line_items: list[FeeLineItemCreate] = Field(..., min_length=1)
 
 
+class FeeTemplateUpdate(BaseModel):
+    """Schema handling partial updates to an existing fee template."""
+    name: Optional[str] = Field(None, min_length=3, max_length=150)
+    description: Optional[str] = Field(None, max_length=500)
+    line_items: Optional[list[FeeLineItemCreate]] = Field(None, min_length=1)
+
+    @field_validator('name')
+    @classmethod
+    def clean_template_name(cls, v: Optional[str]) -> Optional[str]:
+        if v:
+            return utils.sanitize_text(v)
+        return v
+
+    @field_validator('description')
+    @classmethod
+    def clean_description(cls, v: Optional[str]) -> Optional[str]:
+        if v:
+            return utils.sanitize_text(v)
+        return v
+
+
 class FeeTemplateResponse(FeeTemplateBase):
     """Schema formatting database records of full fee packages sent back to the client UI."""
     id: UUID

@@ -56,6 +56,7 @@ class BankSettlement(Base):
     org_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=False, unique=True)
     
     bank_name = Column(String(100), nullable=False)
+    bank_code = Column(String(20), nullable=True)
     account_number = Column(String(20), nullable=False)
     account_name = Column(String(255), nullable=False)
     

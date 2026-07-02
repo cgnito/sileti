@@ -87,6 +87,57 @@ def get_fee_template(
     return template
 
 
+# update a fee template and optionally replace its line items
+@router.patch("/{template_id}", response_model=schemas.FeeTemplateResponse)
+def update_fee_template(
+    template_id: UUID,
+    template_in: schemas.FeeTemplateUpdate,
+    db: Session = Depends(get_db),
+    current_user: security.AuthContext = Depends(security.allow_admin_only)
+):
+    template = db.query(models.FeeTemplate).filter(
+        models.FeeTemplate.id == template_id,
+        models.FeeTemplate.org_id == current_user.org_id
+    ).first()
+
+    if not template:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="requested fee template package profile not found."
+        )
+
+    update_data = template_in.model_dump(exclude_unset=True)
+
+    if "name" in update_data:
+        duplicate_template = db.query(models.FeeTemplate).filter(
+            models.FeeTemplate.org_id == current_user.org_id,
+            models.FeeTemplate.name == update_data["name"],
+            models.FeeTemplate.id != template.id
+        ).first()
+        if duplicate_template:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="a fee template with this profile package name already exists."
+            )
+        template.name = update_data["name"]
+
+    if "description" in update_data:
+        template.description = update_data["description"]
+
+    if "line_items" in update_data:
+        template.line_items.clear()
+        for item in template_in.line_items or []:
+            template.line_items.append(models.FeeLineItem(
+                name=item.name,
+                amount=item.amount,
+                is_compulsory=item.is_compulsory
+            ))
+
+    db.commit()
+    db.refresh(template)
+    return template
+
+
 # completely nuke a master configuration catalog template profile
 @router.delete("/{template_id}")
 def delete_fee_template(

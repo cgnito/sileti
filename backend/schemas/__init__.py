@@ -8,7 +8,11 @@ from .orgs import (
     BankAccountLookupRequest,
     BankAccountLookupResponse,
     OnboardingStatusResponse,
-    BankSettlementUpdate
+    BankSettlementUpdate,
+    DashboardTrendPoint,
+    DashboardBreakdownPoint,
+    DashboardSummary,
+    DashboardMetricsResponse
 )
 from .users import (
     UserCreate, 
@@ -27,6 +31,7 @@ from .fees import (
     FeeLineItemResponse,
     FeeTemplateBase,
     FeeTemplateCreate,
+    FeeTemplateUpdate,
     FeeTemplateResponse,
     OptionalAllocation,
     InvoiceGenerationRequest,
@@ -48,6 +53,10 @@ __all__ = [
     "BankAccountLookupResponse",
     "OnboardingStatusResponse",
     "BankSettlementUpdate",
+    "DashboardTrendPoint",
+    "DashboardBreakdownPoint",
+    "DashboardSummary",
+    "DashboardMetricsResponse",
     "UserCreate",
     "UserResponse",
     "LoginRequest",      
@@ -66,6 +75,7 @@ __all__ = [
     "FeeLineItemResponse",
     "FeeTemplateBase",
     "FeeTemplateCreate",
+    "FeeTemplateUpdate",
     "FeeTemplateResponse",
     "OptionalAllocation",
     "InvoiceGenerationRequest",

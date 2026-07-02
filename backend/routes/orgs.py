@@ -1,7 +1,9 @@
 from uuid import UUID
+from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from sqlalchemy.orm import Session
 import logging
+from decimal import Decimal
 
 import models
 import schemas
@@ -180,6 +182,108 @@ def get_onboarding_status(
     }
 
 
+@router.get("/dashboard-metrics", response_model=schemas.DashboardMetricsResponse)
+def get_dashboard_metrics(
+    current_admin: security.AuthContext = Depends(security.RoleChecker(["admin", "staff"])),
+    db: Session = Depends(get_db)
+):
+    """
+    Returns the school's financial snapshot and chart-ready data for the main dashboard.
+    """
+    org_id = current_admin.org_id
+
+    students_count = db.query(models.Student).filter(models.Student.org_id == org_id).count()
+    classes_count = db.query(models.SchoolClass).filter(models.SchoolClass.org_id == org_id).count()
+    fee_templates_count = db.query(models.FeeTemplate).filter(models.FeeTemplate.org_id == org_id).count()
+
+    invoices = db.query(models.Invoice).filter(models.Invoice.org_id == org_id).all()
+
+    summary_counts = {
+        "paid": 0,
+        "unpaid": 0,
+        "partial": 0,
+        "voided": 0,
+    }
+
+    total_income = Decimal("0.00")
+    total_collected = Decimal("0.00")
+
+    now = datetime.now().replace(day=1)
+    buckets: list[dict[str, object]] = []
+    bucket_map: dict[str, dict[str, object]] = {}
+
+    for offset in range(5, -1, -1):
+        year = now.year
+        month = now.month - offset
+        while month <= 0:
+            year -= 1
+            month += 12
+        month_dt = datetime(year, month, 1)
+        key = month_dt.strftime("%Y-%m")
+        bucket = {
+            "key": key,
+            "label": month_dt.strftime("%b '%y"),
+            "billed": Decimal("0.00"),
+            "collected": Decimal("0.00"),
+        }
+        buckets.append(bucket)
+        bucket_map[key] = bucket
+
+    for invoice in invoices:
+        if invoice.status == models.InvoiceStatus.PAID:
+            summary_counts["paid"] += 1
+        elif invoice.status == models.InvoiceStatus.PARTIAL:
+            summary_counts["partial"] += 1
+        elif invoice.status == models.InvoiceStatus.VOIDED:
+            summary_counts["voided"] += 1
+        else:
+            summary_counts["unpaid"] += 1
+
+        if invoice.status != models.InvoiceStatus.VOIDED:
+            total_income += invoice.total_amount
+            if invoice.created_at:
+                bucket = bucket_map.get(invoice.created_at.strftime("%Y-%m"))
+                if bucket:
+                    bucket["billed"] = bucket["billed"] + invoice.total_amount
+                    bucket["collected"] = bucket["collected"] + invoice.paid_amount
+
+        total_collected += invoice.paid_amount
+
+    total_outstanding = max(total_income - total_collected, Decimal("0.00"))
+    collection_rate_pct = float((total_collected / total_income * Decimal("100")) if total_income > 0 else Decimal("0.00"))
+
+    return {
+        "summary": {
+            "students_count": students_count,
+            "classes_count": classes_count,
+            "fee_templates_count": fee_templates_count,
+            "invoices_count": len(invoices),
+            "paid_invoices_count": summary_counts["paid"],
+            "unpaid_invoices_count": summary_counts["unpaid"],
+            "partially_paid_invoices_count": summary_counts["partial"],
+            "voided_invoices_count": summary_counts["voided"],
+            "total_income": float(total_income),
+            "total_collected": float(total_collected),
+            "total_outstanding": float(total_outstanding),
+            "collection_rate_pct": collection_rate_pct,
+        },
+        "invoice_breakdown": [
+            {"label": "Paid", "value": summary_counts["paid"]},
+            {"label": "Unpaid", "value": summary_counts["unpaid"]},
+            {"label": "Partially paid", "value": summary_counts["partial"]},
+            {"label": "Voided", "value": summary_counts["voided"]},
+        ],
+        "revenue_trend": [
+            {
+                "label": bucket["label"],
+                "billed": float(bucket["billed"]),
+                "collected": float(bucket["collected"]),
+            }
+            for bucket in buckets
+        ],
+    }
+
+
 
 # get supported banks and perform account lookups via nomba api
 @router.get("/banks", status_code=status.HTTP_200_OK)
@@ -295,6 +399,7 @@ def setup_bank_settlement(
     new_settlement = models.BankSettlement(
         org_id=org.id,
         bank_name=bank_input.bank_name,
+        bank_code=bank_input.bank_code,
         account_number=bank_input.account_number,
         account_name=bank_input.account_name,
         nomba_subaccount_id=generated_subaccount_id
