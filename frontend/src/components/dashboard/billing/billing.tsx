@@ -172,7 +172,7 @@ export default function BillingListPage() {
               {invoices.map((invoice) => (
                 <Link key={invoice.id} href={`/dashboard/billing/invoices/${invoice.id}`} className="grid grid-cols-[1.4fr_0.8fr_0.8fr_0.8fr_0.6fr] items-center px-4 py-4 transition-colors hover:bg-surface-container-low">
                   <div>
-                    <p className="font-medium text-on-surface">{invoice.student?.first_name && invoice.student?.last_name ? `${invoice.student.first_name} ${invoice.student.last_name}` : `Student ${invoice.student_id.slice(0, 8)}`}</p>
+                    <p className="font-medium text-on-surface">{invoice.student?.first_name && invoice.student?.last_name ? `${invoice.student.first_name} ${invoice.student.last_name}` : "Student record"}</p>
                     <p className="text-xs text-on-surface-variant">{invoice.session} · {invoice.term}</p>
                   </div>
                   <div className="text-sm text-on-surface-variant">{invoice.student?.class_id ? "Class assigned" : "Pending class"}</div>

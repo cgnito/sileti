@@ -214,7 +214,15 @@ export default function FeesSetupPage() {
                   </div>
                   <div className="mt-4 flex items-center justify-between border-t border-border/70 pt-3 text-sm">
                     <span className="text-on-surface-variant">{template.line_items.length} line item(s)</span>
-                    <span className="font-semibold text-on-surface">Total {total.toLocaleString("en-NG")}</span>
+                    <div className="flex items-center gap-4">
+                      <Link href={`/dashboard/setup/fees/${template.id}`} className="font-semibold text-primary underline underline-offset-4">
+                        View details
+                      </Link>
+                      <Link href={`/dashboard/setup/fees/${template.id}/edit`} className="font-semibold text-primary underline underline-offset-4">
+                        Edit template
+                      </Link>
+                      <span className="font-semibold text-on-surface">Total {total.toLocaleString("en-NG")}</span>
+                    </div>
                   </div>
                 </div>
               );

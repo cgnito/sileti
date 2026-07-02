@@ -7,6 +7,7 @@ import { DashboardHero, DashboardPageShell, DashboardPanel } from "@/src/compone
 import { useAuthStore } from "@/src/features/auth/store/useAuthStore";
 
 const setupLinks = [
+  { href: "/dashboard/setup/profile", title: "School profile", description: "Update your school name and login details", adminOnly: true },
   { href: "/dashboard/setup/bank", title: "Bank settlement", description: "Add payout and bank verification details", adminOnly: true },
   { href: "/dashboard/setup/classes", title: "Classes", description: "Create and manage school classes" },
   { href: "/dashboard/setup/students", title: "Students", description: "Add or import students" },

@@ -1,10 +1,12 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { PencilLine, Plus, Search, Trash2, Upload } from "lucide-react";
+import Link from "next/link";
+import { Eye, PencilLine, Plus, Search, Trash2, Upload } from "lucide-react";
 import { Button } from "@/src/components/shared/Button";
 import { apiClient } from "@/src/shared/api-client";
 import { DashboardEmptyState, DashboardHero, DashboardPageShell, DashboardPanel } from "@/src/components/dashboard/PageChrome";
+import { useAuthStore } from "@/src/features/auth/store/useAuthStore";
 
 type SchoolClass = {
   id: string;
@@ -17,32 +19,25 @@ type StudentRecord = {
   first_name: string;
   last_name: string;
   date_of_birth: string | null;
-  class_id: string;
+  class_id: string | null;
   silete_id: string;
-  parent_whatsapp: string | null;
-  parent_email: string | null;
 };
 
 export default function StudentsSetupPage() {
+  const user = useAuthStore((state) => state.user);
+  const isAdmin = user?.role === "admin";
   const [classes, setClasses] = useState<SchoolClass[]>([]);
   const [selectedClassId, setSelectedClassId] = useState("");
   const [students, setStudents] = useState<StudentRecord[]>([]);
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [dateOfBirth, setDateOfBirth] = useState("");
-  const [parentWhatsApp, setParentWhatsApp] = useState("");
-  const [parentEmail, setParentEmail] = useState("");
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [search, setSearch] = useState("");
-  const [editingStudentId, setEditingStudentId] = useState<string | null>(null);
-  const [editFirstName, setEditFirstName] = useState("");
-  const [editLastName, setEditLastName] = useState("");
-  const [editDateOfBirth, setEditDateOfBirth] = useState("");
-  const [editParentWhatsApp, setEditParentWhatsApp] = useState("");
-  const [editParentEmail, setEditParentEmail] = useState("");
   const [isLoadingClasses, setIsLoadingClasses] = useState(false);
   const [isLoadingStudents, setIsLoadingStudents] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [isPromoting, setIsPromoting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
@@ -84,32 +79,9 @@ export default function StudentsSetupPage() {
     void loadStudents(selectedClassId);
   }, [selectedClassId]);
 
-  function isValidParentWhatsApp(value: string) {
-    const normalized = value.trim();
-    if (!normalized) return true;
-    const candidate = normalized.startsWith("+234") ? `0${normalized.slice(4)}` : normalized;
-    return /^(?:0)(?:702|703|704|706|708|802|803|804|805|806|807|808|809|810|813|814|816|817|818|819|906|907|908|909|701|705|707|709|811|812|815)\d{7}$/.test(candidate);
-  }
-
-  function isValidParentEmail(value: string) {
-    const normalized = value.trim();
-    if (!normalized) return true;
-    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized);
-  }
-
   async function handleCreateStudent() {
     if (!selectedClassId) {
       setError("Choose a class first.");
-      return;
-    }
-
-    if (!isValidParentWhatsApp(parentWhatsApp)) {
-      setError("Enter a valid Nigerian WhatsApp number.");
-      return;
-    }
-
-    if (!isValidParentEmail(parentEmail)) {
-      setError("Enter a valid parent email address.");
       return;
     }
 
@@ -122,15 +94,11 @@ export default function StudentsSetupPage() {
         first_name: firstName.trim(),
         last_name: lastName.trim(),
         date_of_birth: dateOfBirth || null,
-        parent_whatsapp: parentWhatsApp.trim() || null,
-        parent_email: parentEmail.trim() || null,
         class_id: selectedClassId,
       });
       setFirstName("");
       setLastName("");
       setDateOfBirth("");
-      setParentWhatsApp("");
-      setParentEmail("");
       await loadStudents(selectedClassId);
       setSuccess("Student created successfully.");
     } catch (err) {
@@ -185,44 +153,24 @@ export default function StudentsSetupPage() {
     }
   }
 
-  function startEdit(student: StudentRecord) {
-    setEditingStudentId(student.id);
-    setEditFirstName(student.first_name);
-    setEditLastName(student.last_name);
-    setEditDateOfBirth(student.date_of_birth ?? "");
-    setEditParentWhatsApp(student.parent_whatsapp ?? "");
-    setEditParentEmail(student.parent_email ?? "");
-  }
+  async function handleBulkPromotion() {
+    if (!isAdmin) return;
 
-  async function handleUpdateStudent() {
-    if (!editingStudentId) return;
-    if (!isValidParentWhatsApp(editParentWhatsApp)) {
-      setError("Enter a valid Nigerian WhatsApp number.");
-      return;
-    }
-    if (!isValidParentEmail(editParentEmail)) {
-      setError("Enter a valid parent email address.");
-      return;
-    }
+    if (!window.confirm("Promote active students to the next class and graduate the final class?")) return;
 
-    setIsSaving(true);
+    setIsPromoting(true);
     setError(null);
     setSuccess(null);
+
     try {
-      await apiClient.patch(`/students/${editingStudentId}`, {
-        first_name: editFirstName.trim(),
-        last_name: editLastName.trim(),
-        date_of_birth: editDateOfBirth || null,
-        parent_whatsapp: editParentWhatsApp.trim() || null,
-        parent_email: editParentEmail.trim() || null,
-      });
+      const result = await apiClient.post<{ graduated: number; promoted: number; message: string }>("/students/bulk-promotion");
       await loadStudents(selectedClassId);
-      setEditingStudentId(null);
-      setSuccess("Student updated successfully.");
+      await loadClasses();
+      setSuccess(result.message || "Bulk promotion completed successfully.");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "We could not update the student.");
+      setError(err instanceof Error ? err.message : "We could not complete the promotion run.");
     } finally {
-      setIsSaving(false);
+      setIsPromoting(false);
     }
   }
 
@@ -238,7 +186,41 @@ export default function StudentsSetupPage() {
         eyebrow="Setup"
         title="Students"
         description="Add students one by one or import a classroom roster from CSV."
-        action={(
+      />
+
+      <div className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
+        <DashboardPanel className="grid gap-5">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h2 className="font-headline text-lg text-on-surface">Add student</h2>
+              <p className="mt-1 text-sm text-on-surface-variant">Create a student profile and assign it to a class.</p>
+            </div>
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <label className="space-y-2 text-sm text-on-surface-variant md:col-span-2">
+              <span className="block font-medium text-on-surface">Select class</span>
+              <select id="student-class" value={selectedClassId} onChange={(event) => setSelectedClassId(event.target.value)} className="w-full rounded-lg border border-border bg-white px-3 py-2.5 text-sm text-on-surface outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/20">
+                {isLoadingClasses ? <option value="">Loading classes…</option> : classes.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+              </select>
+            </label>
+            <label className="space-y-2 text-sm text-on-surface-variant">
+              <span className="block font-medium text-on-surface">First name</span>
+              <input id="student-first-name" value={firstName} onChange={(event) => setFirstName(event.target.value)} className="w-full rounded-lg border border-border bg-white px-3 py-2.5 text-sm text-on-surface outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/20" />
+            </label>
+            <label className="space-y-2 text-sm text-on-surface-variant">
+              <span className="block font-medium text-on-surface">Last name</span>
+              <input id="student-last-name" value={lastName} onChange={(event) => setLastName(event.target.value)} className="w-full rounded-lg border border-border bg-white px-3 py-2.5 text-sm text-on-surface outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/20" />
+            </label>
+            <label className="space-y-2 text-sm text-on-surface-variant md:col-span-2">
+              <span className="block font-medium text-on-surface">Date of birth</span>
+              <input id="student-dob" type="date" value={dateOfBirth} onChange={(event) => setDateOfBirth(event.target.value)} className="w-full rounded-lg border border-border bg-white px-3 py-2.5 text-sm text-on-surface outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/20" />
+            </label>
+          </div>
+
+          {error ? <p className="text-xs text-error">{error}</p> : null}
+          {success ? <p className="text-xs text-primary">{success}</p> : null}
+
           <div className="flex flex-wrap gap-2">
             <Button onClick={() => void handleCreateStudent()} disabled={isSaving || !selectedClassId}>
               <Plus className="h-4 w-4" />
@@ -249,52 +231,36 @@ export default function StudentsSetupPage() {
               Upload CSV
             </Button>
           </div>
-        )}
-      />
+        </DashboardPanel>
 
-      <DashboardPanel className="grid gap-6">
-        <div className="grid gap-4 md:grid-cols-[1.6fr_1fr]">
-          <label className="space-y-2 text-sm text-on-surface-variant">
-            <span className="block font-medium text-on-surface">Select class</span>
-            <select id="student-class" value={selectedClassId} onChange={(event) => setSelectedClassId(event.target.value)} className="w-full rounded-lg border border-border bg-white px-3 py-2.5 text-sm text-on-surface outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/20">
-              {isLoadingClasses ? <option value="">Loading classes…</option> : classes.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-            </select>
-          </label>
-          <label className="space-y-2 text-sm text-on-surface-variant">
-            <span className="block font-medium text-on-surface">Search students</span>
-            <div className="relative">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-on-surface-variant" />
-              <input id="student-search" value={search} onChange={(event) => setSearch(event.target.value)} className="w-full rounded-lg border border-border bg-white py-2.5 pl-9 pr-3 text-sm text-on-surface outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/20" placeholder="Search by name" />
+        <div className="grid gap-6">
+          <DashboardPanel className="grid gap-4">
+            <div>
+              <h2 className="font-headline text-lg text-on-surface">Search students</h2>
+              <p className="mt-1 text-sm text-on-surface-variant">Filter the list below without mixing search into the create form.</p>
             </div>
-          </label>
-        </div>
+            <label className="space-y-2 text-sm text-on-surface-variant">
+              <span className="block font-medium text-on-surface">Search by name</span>
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-on-surface-variant" />
+                <input id="student-search" value={search} onChange={(event) => setSearch(event.target.value)} className="w-full rounded-lg border border-border bg-white py-2.5 pl-9 pr-3 text-sm text-on-surface outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/20" placeholder="Start typing a student name" />
+              </div>
+            </label>
+          </DashboardPanel>
 
-        <div className="grid gap-4 lg:grid-cols-2">
-          <label className="space-y-2 text-sm text-on-surface-variant">
-            <span className="block font-medium text-on-surface">First name</span>
-            <input id="student-first-name" value={firstName} onChange={(event) => setFirstName(event.target.value)} className="w-full rounded-lg border border-border bg-white px-3 py-2.5 text-sm text-on-surface outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/20" />
-          </label>
-          <label className="space-y-2 text-sm text-on-surface-variant">
-            <span className="block font-medium text-on-surface">Last name</span>
-            <input id="student-last-name" value={lastName} onChange={(event) => setLastName(event.target.value)} className="w-full rounded-lg border border-border bg-white px-3 py-2.5 text-sm text-on-surface outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/20" />
-          </label>
-          <label className="space-y-2 text-sm text-on-surface-variant">
-            <span className="block font-medium text-on-surface">Date of birth</span>
-            <input id="student-dob" type="date" value={dateOfBirth} onChange={(event) => setDateOfBirth(event.target.value)} className="w-full rounded-lg border border-border bg-white px-3 py-2.5 text-sm text-on-surface outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/20" />
-          </label>
-          <label className="space-y-2 text-sm text-on-surface-variant">
-            <span className="block font-medium text-on-surface">Parent WhatsApp Number</span>
-            <input id="student-parent-whatsapp" value={parentWhatsApp} onChange={(event) => setParentWhatsApp(event.target.value)} inputMode="tel" placeholder="08031234567" className="w-full rounded-lg border border-border bg-white px-3 py-2.5 text-sm text-on-surface outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/20" />
-          </label>
-          <label className="space-y-2 text-sm text-on-surface-variant">
-            <span className="block font-medium text-on-surface">Parent Email</span>
-            <input id="student-parent-email" type="email" value={parentEmail} onChange={(event) => setParentEmail(event.target.value)} placeholder="parent@example.com" className="w-full rounded-lg border border-border bg-white px-3 py-2.5 text-sm text-on-surface outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/20" />
-          </label>
+          {isAdmin ? (
+            <DashboardPanel className="grid gap-4">
+              <div>
+                <h2 className="font-headline text-lg text-on-surface">Class promotion</h2>
+                <p className="mt-1 text-sm text-on-surface-variant">Move active students up a class or graduate the final class at session rollover.</p>
+              </div>
+              <Button variant="secondary" onClick={() => void handleBulkPromotion()} disabled={isSaving || isPromoting}>
+                {isPromoting ? "Promoting…" : "Run bulk promotion"}
+              </Button>
+            </DashboardPanel>
+          ) : null}
         </div>
-
-        {error ? <p className="text-xs text-error">{error}</p> : null}
-        {success ? <p className="text-xs text-primary">{success}</p> : null}
-      </DashboardPanel>
+      </div>
 
       <DashboardPanel>
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
@@ -309,61 +275,35 @@ export default function StudentsSetupPage() {
           <DashboardEmptyState className="mt-4" title="No students found" description="No students match your current filter." />
         ) : (
           <div className="mt-4 overflow-hidden rounded-xl border border-border/70">
-            <div className="grid grid-cols-[1.3fr_0.8fr_1.1fr_1.1fr_0.6fr] bg-surface-container-low px-4 py-3 text-[11px] font-label uppercase tracking-[0.35em] text-on-surface-variant">
+            <div className="grid grid-cols-[1.3fr_0.8fr_0.6fr] bg-surface-container-low px-4 py-3 text-[11px] font-label uppercase tracking-[0.35em] text-on-surface-variant">
               <span>Name</span>
               <span>DOB</span>
-              <span>Parent WhatsApp</span>
-              <span>Parent Email</span>
               <span>Actions</span>
             </div>
             <div className="divide-y divide-border/70 bg-white">
               {filteredStudents.map((student) => (
-                <div key={student.id} className="grid grid-cols-[1.3fr_0.8fr_1.1fr_1.1fr_0.6fr] items-center gap-3 px-4 py-3">
+                <div key={student.id} className="grid grid-cols-[1.3fr_0.8fr_0.6fr] items-center gap-3 px-4 py-3">
                   <div>
                     <p className="font-medium text-on-surface">{student.first_name} {student.last_name}</p>
                     <p className="text-xs text-on-surface-variant">{student.silete_id}</p>
+                    <Link href={`/dashboard/setup/students/${student.id}`} className="mt-1 inline-block text-xs font-semibold text-primary underline underline-offset-4">
+                      View details
+                    </Link>
                   </div>
                   <div className="text-sm text-on-surface-variant">{student.date_of_birth ? new Date(student.date_of_birth).toLocaleDateString("en-NG") : "—"}</div>
-                  <div className="text-sm text-on-surface-variant">{student.parent_whatsapp ?? "—"}</div>
-                  <div className="text-sm text-on-surface-variant">{student.parent_email ?? "—"}</div>
                   <div className="flex flex-wrap gap-2">
-                    <button className="rounded-md p-1.5 text-on-surface-variant transition-colors hover:bg-surface-container-low hover:text-primary" onClick={() => startEdit(student)}>
+                    <Link href={`/dashboard/setup/students/${student.id}`} className="inline-flex items-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium text-on-surface-variant transition-colors hover:bg-surface-container-low hover:text-primary">
+                      <Eye className="h-4 w-4" />
+                      Details
+                    </Link>
+                    <Link href={`/dashboard/setup/students/${student.id}/edit`} className="inline-flex items-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium text-on-surface-variant transition-colors hover:bg-surface-container-low hover:text-primary">
                       <PencilLine className="h-4 w-4" />
-                    </button>
+                      Edit
+                    </Link>
                     <button className="rounded-md p-1.5 text-on-surface-variant transition-colors hover:bg-surface-container-low hover:text-error" onClick={() => void handleDelete(student.id)}>
                       <Trash2 className="h-4 w-4" />
                     </button>
                   </div>
-                  {editingStudentId === student.id && (
-                    <div className="col-span-5 mt-2 rounded-lg border border-border/70 bg-surface-container-low p-4">
-                      <div className="grid gap-4 lg:grid-cols-2">
-                        <label className="space-y-2 text-sm text-on-surface-variant">
-                          <span className="block font-medium text-on-surface">First name</span>
-                          <input id={`edit-${student.id}-first-name`} value={editFirstName} onChange={(event) => setEditFirstName(event.target.value)} className="w-full rounded-lg border border-border bg-white px-3 py-2.5 text-sm text-on-surface outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/20" />
-                        </label>
-                        <label className="space-y-2 text-sm text-on-surface-variant">
-                          <span className="block font-medium text-on-surface">Last name</span>
-                          <input id={`edit-${student.id}-last-name`} value={editLastName} onChange={(event) => setEditLastName(event.target.value)} className="w-full rounded-lg border border-border bg-white px-3 py-2.5 text-sm text-on-surface outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/20" />
-                        </label>
-                        <label className="space-y-2 text-sm text-on-surface-variant">
-                          <span className="block font-medium text-on-surface">Date of birth</span>
-                          <input id={`edit-${student.id}-dob`} type="date" value={editDateOfBirth} onChange={(event) => setEditDateOfBirth(event.target.value)} className="w-full rounded-lg border border-border bg-white px-3 py-2.5 text-sm text-on-surface outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/20" />
-                        </label>
-                        <label className="space-y-2 text-sm text-on-surface-variant">
-                          <span className="block font-medium text-on-surface">Parent WhatsApp</span>
-                          <input id={`edit-${student.id}-parent-whatsapp`} value={editParentWhatsApp} onChange={(event) => setEditParentWhatsApp(event.target.value)} className="w-full rounded-lg border border-border bg-white px-3 py-2.5 text-sm text-on-surface outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/20" />
-                        </label>
-                        <label className="space-y-2 text-sm text-on-surface-variant">
-                          <span className="block font-medium text-on-surface">Parent Email</span>
-                          <input id={`edit-${student.id}-parent-email`} type="email" value={editParentEmail} onChange={(event) => setEditParentEmail(event.target.value)} className="w-full rounded-lg border border-border bg-white px-3 py-2.5 text-sm text-on-surface outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/20" />
-                        </label>
-                      </div>
-                      <div className="mt-4 flex flex-wrap gap-2">
-                        <Button onClick={() => void handleUpdateStudent()} disabled={isSaving}>Save changes</Button>
-                        <Button variant="secondary" onClick={() => setEditingStudentId(null)} disabled={isSaving}>Cancel</Button>
-                      </div>
-                    </div>
-                  )}
                 </div>
               ))}
             </div>

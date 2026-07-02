@@ -42,6 +42,7 @@ const navGroups: NavGroup[] = [
   {
     title: "Setup",
     items: [
+      { label: "School Profile", href: "/dashboard/setup/profile", icon: UserCog, adminOnly: true },
       { label: "Bank Settlement", href: "/dashboard/setup/bank", icon: Landmark, adminOnly: true },
       { label: "Classes", href: "/dashboard/setup/classes", icon: GraduationCap },
       { label: "Students", href: "/dashboard/setup/students", icon: Users },

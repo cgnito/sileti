@@ -24,6 +24,7 @@ type BankSettlementResponse = {
   id: string;
   org_id: string;
   bank_name: string;
+  bank_code?: string | null;
   account_number: string;
   account_name: string;
   nomba_subaccount_id: string | null;
@@ -58,7 +59,11 @@ export default function BankSetupPage() {
           setBanks(bankList);
           if (existingSettlement) {
             setIsEditing(true);
-            setSelectedBankCode(bankList.find((bank) => bank.bank_name === existingSettlement.bank_name)?.bank_code ?? "");
+            setSelectedBankCode(
+              existingSettlement.bank_code
+                ?? bankList.find((bank) => bank.bank_name === existingSettlement.bank_name)?.bank_code
+                ?? "",
+            );
             setAccountNumber(existingSettlement.account_number);
             setAccountName(existingSettlement.account_name);
           }
@@ -136,12 +141,14 @@ export default function BankSetupPage() {
       if (isEditing) {
         await apiClient.patch<BankSettlementResponse>("/orgs/bank-settlement", {
           bank_name: selectedBank.bank_name,
+          bank_code: selectedBank.bank_code,
           account_number: accountNumber,
           account_name: accountName,
         });
       } else {
         await apiClient.post<BankSettlementResponse>("/orgs/bank-settlement", {
           bank_name: selectedBank.bank_name,
+          bank_code: selectedBank.bank_code,
           account_number: accountNumber,
           account_name: accountName,
         });
