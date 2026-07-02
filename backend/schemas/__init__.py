@@ -35,6 +35,7 @@ from .fees import (
     InvoiceResponse,
     InitializePaymentResponse
 )
+from .webhooks import WebhookPayload
 
 __all__ = [
     "OrgCreate",
@@ -71,5 +72,6 @@ __all__ = [
     "AddOptionalItemRequest",
     "InvoiceDetailResponse",
     "InvoiceResponse",
-    "InitializePaymentResponse"
+    "InitializePaymentResponse",
+    "WebhookPayload"
 ]

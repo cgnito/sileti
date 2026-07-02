@@ -12,3 +12,5 @@ python-dotenv             # read secrets from .env.
 pydantic[email]           # email validation logic.
 email-validator           # required by pydantic[email].
 resend                    # library for sending emails.
+google-genai>=1.0.0
+twilio==9.2.0

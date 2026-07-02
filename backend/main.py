@@ -7,7 +7,9 @@ from routes import (
     fees_router,
     billing_router,
     classes_router,
-    students_router
+    students_router,
+    webhooks_router,
+    whatsapp_router
     # payments_router  
 )
 
@@ -39,6 +41,8 @@ app.include_router(fees_router)
 app.include_router(billing_router)
 app.include_router(classes_router)
 app.include_router(students_router)
+app.include_router(webhooks_router)
+app.include_router(whatsapp_router)
 # app.include_router(payments_router)
 
 

@@ -5,6 +5,8 @@ from .fees import router as fees_router
 from .billing import router as billing_router
 from .classes import router as classes_router
 from .students import router as students_router
+from .webhooks import router as webhooks_router
+from .whatsapp import router as whatsapp_router
 # from .payments import router as payments_router
 
 __all__ = [
@@ -14,5 +16,7 @@ __all__ = [
     "fees_router",
     "billing_router",
     "classes_router",
-    "students_router"
+    "students_router",
+    "webhooks_router",
+    "whatsapp_router"
 ]

@@ -7,6 +7,7 @@ import models
 import schemas
 import utils
 import security
+from . import payments  
 from database import get_db
 
 logger = logging.getLogger(__name__)
@@ -128,7 +129,6 @@ def update_my_school(
 
 
 # onboarding status and bank management endpoints
-
 @router.get("/onboarding-status", response_model=schemas.OnboardingStatusResponse)
 def get_onboarding_status(
     current_admin: security.AuthContext = Depends(security.allow_admin_only),
@@ -181,7 +181,7 @@ def get_onboarding_status(
 
 
 
-# todo 
+# get supported banks and perform account lookups via nomba api
 @router.get("/banks", status_code=status.HTTP_200_OK)
 def get_supported_banks(
     current_admin: security.AuthContext = Depends(security.allow_admin_only) #maybe
@@ -190,15 +190,15 @@ def get_supported_banks(
     proxies supported banks list directly from the nomba api to populate frontend dropdown grids.
     """
     try:
-        # todo: replace this placeholder array with your active nomba client request execution
-        # mock response to unblock frontend dropdown testing for the hackathon context
-        mock_banks = [
-            {"bank_name": "Access Bank", "bank_code": "044"},
-            {"bank_name": "Guaranty Trust Bank", "bank_code": "058"},
-            {"bank_name": "Zenith Bank", "bank_code": "057"},
-            {"bank_name": "Nomba Bank", "bank_code": "999"}
+        # trigger outbound live proxy query against nomba's sandbox transfers bank list route
+        response_data = payments.make_nomba_request(method="GET", endpoint="/transfers/banks")
+        
+        # parse incoming response array and map parameters to match frontend key properties
+        raw_banks = response_data.get("data", {}).get("results", [])
+        mapped_banks = [
+            {"bank_name": item["name"], "bank_code": item["code"]} for item in raw_banks
         ]
-        return mock_banks
+        return mapped_banks
     except Exception as e:
         logger.error(f"failed to retrieve banks list from nomba provider: {str(e)}")
         raise HTTPException(
@@ -208,7 +208,7 @@ def get_supported_banks(
 
 
 
-# todo 
+# verify bank account name via nomba api before form submission
 @router.post("/bank-lookup", response_model=schemas.BankAccountLookupResponse)
 def verify_bank_account_name(
     lookup_input: schemas.BankAccountLookupRequest,
@@ -218,13 +218,24 @@ def verify_bank_account_name(
     performs a real-time account lookup via nomba api before form submission.
     """
     try:
-        # todo: implement the outbound nomba oauth token header and api request here
-        # placeholder response mimicking a successful account matching lookup loop
-        resolved_name = "GREENWOOD ACADEMY TEST ACCOUNT"
+        # pack user context into standard validation model payload body mapping rules
+        payload = {
+            "accountNumber": lookup_input.account_number,
+            "bankCode": lookup_input.bank_code
+        }
+        
+        # fire standard post request targeting sandbox lookup validation channel
+        response_data = payments.make_nomba_request(
+            method="POST", 
+            endpoint="/transfers/bank/lookup", 
+            payload=payload
+        )
+        
+        resolved_data = response_data.get("data", {})
         
         return {
             "account_number": lookup_input.account_number,
-            "account_name": resolved_name,
+            "account_name": resolved_data.get("accountName", "unknown matching account"),
             "bank_code": lookup_input.bank_code
         }
     except Exception as e:
@@ -235,7 +246,7 @@ def verify_bank_account_name(
         )
 
 
-# todo
+# get bank settlement details for the current school organization
 @router.get("/bank-settlement", response_model=schemas.BankSettlementResponse | None)
 def get_bank_settlement(
     current_admin: security.AuthContext = Depends(security.allow_admin_only),
@@ -252,6 +263,7 @@ def get_bank_settlement(
     return settlement
 
 
+# submit bank settlement details for the current school organization and create a nomba subaccount
 @router.post("/bank-settlement", response_model=schemas.BankSettlementResponse, status_code=status.HTTP_201_CREATED)
 def setup_bank_settlement(
     bank_input: schemas.BankSettlementCreate,
@@ -276,8 +288,8 @@ def setup_bank_settlement(
             detail="bank settlement records have already been registered for this school"
         )
 
-    # todo: trigger nomba api method to provision a subaccount tracking token for this target
-    generated_subaccount_id = f"sub_acc_{utils.generate_short_code(org.school_name).lower()}"
+    # provision static allocated workspace credentials bound inside environment configurations
+    generated_subaccount_id = payments.NOMBA_HACKATHON_SUBACCOUNT
 
     # compile and insert the database record mapping
     new_settlement = models.BankSettlement(
@@ -297,7 +309,7 @@ def setup_bank_settlement(
 
     return new_settlement
 
-# todo: implement a PATCH endpoint to modify existing bank settlement details and trigger nomba subaccount update if necessary
+# update existing bank settlement details for the current school organization and synchronize with nomba
 @router.patch("/bank-settlement", response_model=schemas.BankSettlementResponse)
 def update_bank_settlement(
     bank_update: schemas.BankSettlementUpdate,
@@ -317,19 +329,45 @@ def update_bank_settlement(
     # find the existing settlement profile row
     settlement = db.query(models.BankSettlement).filter(models.BankSettlement.org_id == org.id).first()
     if not settlement:
+        # fixed: changed status_code from 444 to 404 to avoid fastapi runtime crashing
         raise HTTPException(
-            status_code=status.HTTP_444_NOT_FOUND,
+            status_code=status.HTTP_404_NOT_FOUND,
             detail="no bank settlement record found to update. please create one first."
         )
 
     # extract only the fields the frontend explicitly sent over
     update_data = bank_update.model_dump(exclude_unset=True)
 
+    # validation step: if account parameters changed, verify details with nomba first before committing
+    new_account = update_data.get("account_number", settlement.account_number)
+    new_bank = update_data.get("bank_code", settlement.bank_code)
+
+    if "account_number" in update_data or "bank_code" in update_data:
+        try:
+            payload = {
+                "accountNumber": new_account,
+                "bankCode": new_bank
+            }
+            # hit nomba API sandbox to run verification check routine
+            response_data = payments.make_nomba_request(
+                method="POST", 
+                endpoint="/transfers/bank/lookup", 
+                payload=payload
+            )
+            resolved_data = response_data.get("data", {})
+            # automatically override the name to ensure compliance with central switch lookup
+            update_data["account_name"] = resolved_data.get("accountName", settlement.account_name)
+        except Exception as e:
+            logger.error(f"failed to validate updated account configurations with nomba: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="could not resolve updated banking details. please verify account parameters."
+            )
+
     # loop and apply modifications dynamically
     for key, value in update_data.items():
         setattr(settlement, key, value)
 
-    # todo: if account number or bank changed, trigger a fresh nomba subaccount modification api call here
 
     db.commit()
     db.refresh(settlement)

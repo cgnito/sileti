@@ -222,6 +222,12 @@ class InvoiceDetail(Base):
     invoice = relationship("Invoice", back_populates="items")
 
 
+
+class TransactionStatus(str, enum.Enum):
+    PENDING = "PENDING"
+    SUCCESS = "SUCCESS"
+    FAILED = "FAILED"
+
 class Transaction(Base):
     __tablename__ = "transactions"
 
@@ -229,10 +235,27 @@ class Transaction(Base):
     org_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=False)
     invoice_id = Column(UUID(as_uuid=True), ForeignKey("invoices.id"), nullable=False)
     
-    amount = Column(Numeric(12, 2), nullable=False)
-    reference = Column(String(100), unique=True, nullable=False)
-    status = Column(String(50), nullable=False)  # e.g., "successful"
+    amount = Column(Numeric(12, 2), nullable=False) # Store as actual decimal amount (e.g., 2500.00)
+    reference = Column(String(100), unique=True, nullable=False) # Maps to orderReference
+    status = Column(String(50), nullable=False, default=TransactionStatus.PENDING.value) 
+    
+    # Audit parameters for webhooks
+    payment_method = Column(String(50), nullable=True) # Will map to what customer chose on hosted page
+    checkout_url = Column(String(512), nullable=True)  
+    customer_phone = Column(String(20), nullable=True)
+    
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
-    # relationships
+    # Relationships
     invoice = relationship("Invoice", back_populates="transactions")
+
+
+class WebhookLog(Base):
+    __tablename__ = "webhook_logs"
+
+    # Nomba's exact requestId as the primary key so the DB naturally 
+    # rejects duplicates via its UNIQUE constraint.
+    request_id = Column(String(100), primary_key=True)
+    event_type = Column(String(50), nullable=False)
+    processed_at = Column(DateTime(timezone=True), server_default=func.now())
