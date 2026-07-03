@@ -25,6 +25,7 @@ export default function FeeTemplateDetailPage() {
   const router = useRouter();
   const templateId = params.templateId;
   const [template, setTemplate] = useState<FeeTemplate | null>(null);
+  const [search, setSearch] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [isDeleting, setIsDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -58,6 +59,17 @@ export default function FeeTemplateDetailPage() {
     () => template?.line_items.reduce((sum, item) => sum + Number(item.amount ?? 0), 0) ?? 0,
     [template]
   );
+  const compulsoryCount = template?.line_items.filter((item) => item.is_compulsory).length ?? 0;
+  const optionalCount = template?.line_items.filter((item) => !item.is_compulsory).length ?? 0;
+  const filteredLineItems = useMemo(() => {
+    if (!template) return [];
+    const query = search.trim().toLowerCase();
+    if (!query) return template.line_items;
+    return template.line_items.filter((item) => {
+      const scope = [item.name, item.is_compulsory ? "compulsory" : "optional", item.amount].join(" ").toLowerCase();
+      return scope.includes(query);
+    });
+  }, [search, template]);
 
   async function handleDelete() {
     if (!template) return;
@@ -100,56 +112,111 @@ export default function FeeTemplateDetailPage() {
           </div>
         ) : template ? (
           <>
-            <div className="grid gap-4 rounded-[1.15rem] border border-border/70 bg-surface-container-low p-5 md:grid-cols-[1fr_auto] md:items-center">
-              <div>
-                <p className="text-[11px] font-label uppercase tracking-[0.35em] text-primary">Template profile</p>
-                <h2 className="mt-2 font-headline text-2xl text-on-surface">{template.name}</h2>
-                <p className="mt-2 text-sm text-on-surface-variant">{template.description || "No description provided."}</p>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <Link href={`/dashboard/setup/fees/${template.id}/edit`} className="inline-flex items-center gap-2 rounded-xl border border-primary/20 bg-primary/10 px-4 py-2 text-sm font-semibold text-primary transition-colors hover:bg-primary/15">
-                  <PencilLine className="h-4 w-4" />
-                  Edit template
-                </Link>
-                <button onClick={() => void handleDelete()} disabled={isDeleting} className="inline-flex items-center gap-2 rounded-xl border border-border/70 bg-white px-4 py-2 text-sm font-semibold text-on-surface transition-colors hover:bg-surface-container-low disabled:cursor-not-allowed">
-                  <Trash2 className="h-4 w-4" />
-                  {isDeleting ? "Deleting…" : "Delete"}
-                </button>
-              </div>
-            </div>
+            <div className="overflow-hidden rounded-3xl border border-border/70 bg-white shadow-[0_1px_0_rgba(15,23,42,0.03)]">
+              <div className="border-b border-border/70 bg-surface-container-low/60 px-6 py-6 sm:px-8">
+                {/* Meta Tags */}
+                <div className="flex items-center gap-3">
+                  <span className="text-[10px] font-semibold uppercase tracking-[0.2em] text-primary">
+                    Template profile
+                  </span>
+                  <span className="text-[10px] font-semibold uppercase tracking-[0.2em] text-on-surface-variant/70">
+                    {template.line_items.length} items
+                  </span>
+                </div>
 
-            <div className="grid gap-4 md:grid-cols-2">
-              <div className="rounded-xl border border-border/70 bg-white p-4">
-                <p className="text-sm font-medium text-on-surface">Template name</p>
-                <p className="mt-3 text-base text-on-surface">{template.name}</p>
-              </div>
-              <div className="rounded-xl border border-border/70 bg-white p-4">
-                <p className="text-sm font-medium text-on-surface">Line items</p>
-                <p className="mt-3 text-base text-on-surface">{template.line_items.length} item(s)</p>
-              </div>
-              <div className="rounded-xl border border-border/70 bg-white p-4 md:col-span-2">
-                <p className="text-sm font-medium text-on-surface">Total</p>
-                <p className="mt-3 text-base text-on-surface">{total.toLocaleString("en-NG")}</p>
-              </div>
-            </div>
+                {/* Main Header / Actions */}
+                <div className="mt-4 flex flex-col justify-between gap-6 lg:flex-row lg:items-start">
+                  <div className="max-w-2xl">
+                    <h2 className="font-headline text-3xl font-medium tracking-tight text-on-surface">{template.name}</h2>
+                    <p className="mt-2 text-sm leading-relaxed text-on-surface-variant">{template.description || "No description provided."}</p>
+                  </div>
 
-            <div className="grid gap-3 md:grid-cols-2">
-              {template.line_items.map((item) => (
-                <div key={item.id} className="rounded-xl border border-border/70 bg-surface-container-low p-4">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="font-semibold text-on-surface">{item.name}</p>
-                      <p className="mt-1 text-xs text-on-surface-variant">{item.is_compulsory ? "Compulsory line item" : "Optional line item"}</p>
-                    </div>
-                    <span className="text-sm font-semibold text-on-surface">{Number(item.amount).toLocaleString("en-NG")}</span>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <Link
+                      href={`/dashboard/setup/fees/${template.id}/edit`}
+                      className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-primary/20 bg-primary/10 px-4 text-xs font-semibold text-primary transition-colors hover:bg-primary/15"
+                    >
+                      <PencilLine className="h-3.5 w-3.5" />
+                      Edit template
+                    </Link>
+                    <button
+                      onClick={() => void handleDelete()}
+                      disabled={isDeleting}
+                      className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-border/70 bg-white px-4 text-xs font-semibold text-on-surface transition-colors hover:bg-surface-container-low disabled:cursor-not-allowed"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                      {isDeleting ? "Deleting…" : "Delete"}
+                    </button>
                   </div>
                 </div>
-              ))}
-            </div>
+              </div>
 
-            {template.line_items.length === 0 ? (
-              <DashboardEmptyState title="No line items" description="This template does not contain any line items yet." />
-            ) : null}
+              {/* Metrics Row */}
+              <div className="grid border-b border-border/70 sm:grid-cols-3">
+                <div className="border-b border-border/70 p-6 sm:border-b-0 sm:border-r">
+                  <p className="text-[10px] font-medium uppercase tracking-[0.2em] text-on-surface-variant/80">Total value</p>
+                  <p className="mt-1 font-headline text-2xl font-semibold tracking-tight text-on-surface">{total.toLocaleString("en-NG")}</p>
+                </div>
+                <div className="border-b border-border/70 p-6 sm:border-b-0 sm:border-r">
+                  <p className="text-[10px] font-medium uppercase tracking-[0.2em] text-on-surface-variant/80">Compulsory</p>
+                  <p className="mt-1 font-headline text-2xl font-semibold tracking-tight text-on-surface">{compulsoryCount}</p>
+                </div>
+                <div className="p-6">
+                  <p className="text-[10px] font-medium uppercase tracking-[0.2em] text-on-surface-variant/80">Optional</p>
+                  <p className="mt-1 font-headline text-2xl font-semibold tracking-tight text-on-surface">{optionalCount}</p>
+                </div>
+              </div></div>
+            <div className="grid gap-4">
+              <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+                <div>
+                  <h3 className="font-headline text-lg text-on-surface">Line items</h3>
+                  <p className="mt-1 text-sm text-on-surface-variant">Each fee item that makes up this template.</p>
+                </div>
+                <label className="space-y-2 text-sm text-on-surface-variant md:min-w-[18rem]">
+                  <span className="block font-medium">Search</span>
+                  <input
+                    value={search}
+                    onChange={(event) => setSearch(event.target.value)}
+                    className="w-full rounded-lg border border-border bg-white px-3 py-2.5 text-sm text-on-surface outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/20"
+                    placeholder="Search line items"
+                  />
+                </label>
+              </div>
+
+              {filteredLineItems.length === 0 ? (
+                <DashboardEmptyState title="No line items" description="This template does not contain any line items yet." />
+              ) : (
+                <div className="overflow-x-auto rounded-xl border border-border/70">
+                  <div className="min-w-[760px]">
+                    <div className="grid grid-cols-[1.3fr_0.7fr_0.7fr_1fr] bg-surface-container-low px-4 py-3 text-[11px] font-label uppercase tracking-[0.35em] text-on-surface-variant">
+                      <span>Line item</span>
+                      <span>Type</span>
+                      <span>Amount</span>
+                      <span>Notes</span>
+                    </div>
+                    <div className="divide-y divide-border/70 bg-white">
+                      {filteredLineItems.map((item) => (
+                        <div key={item.id} className="grid grid-cols-[1.3fr_0.7fr_0.7fr_1fr] items-center px-4 py-4">
+                          <div className="min-w-0">
+                            <p className="truncate font-semibold text-on-surface">{item.name}</p>
+                            <p className="text-xs text-on-surface-variant">{item.id.slice(0, 8)}</p>
+                          </div>
+                          <div>
+                            <span className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] ${item.is_compulsory ? "bg-primary/10 text-primary" : "bg-amber-50 text-amber-700"}`}>
+                              {item.is_compulsory ? "Compulsory" : "Optional"}
+                            </span>
+                          </div>
+                          <div className="text-sm font-semibold text-on-surface">{Number(item.amount).toLocaleString("en-NG")}</div>
+                          <div className="text-sm text-on-surface-variant">
+                            {item.is_compulsory ? "Included automatically." : "Can be allocated per student."}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
 
             {error ? <p className="text-xs text-error">{error}</p> : null}
           </>

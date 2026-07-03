@@ -32,6 +32,7 @@ export default function BillingGeneratePage() {
   useEffect(() => {
     if (!selectedClass) {
       setStudents([]);
+      setSelectedOptionalIds({});
       return;
     }
 
@@ -39,9 +40,21 @@ export default function BillingGeneratePage() {
     async function loadStudents() {
       try {
         const data = await fetchStudents(selectedClass);
-        if (active) setStudents(data);
+        if (active) {
+          setStudents(data);
+          setSelectedOptionalIds((current) => {
+            const next: Record<string, string[]> = {};
+            for (const student of data) {
+              next[student.id] = current[student.id] ?? [];
+            }
+            return next;
+          });
+        }
       } catch {
-        if (active) setStudents([]);
+        if (active) {
+          setStudents([]);
+          setSelectedOptionalIds({});
+        }
       }
     }
 
@@ -53,17 +66,29 @@ export default function BillingGeneratePage() {
 
   useEffect(() => {
     if (!template) return;
-    const optionalIds = template.line_items.filter((item) => !item.is_compulsory).map((item) => item.id);
-    setSelectedOptionalIds((current) => ({
-      ...current,
-      [template.id]: optionalIds,
-    }));
-  }, [template]);
+    setSelectedOptionalIds((current) => {
+      const next: Record<string, string[]> = {};
+      for (const student of students) {
+        next[student.id] = current[student.id] ?? [];
+      }
+      return next;
+    });
+  }, [template, students]);
 
   const optionalItems = useMemo(
     () => template?.line_items.filter((item) => !item.is_compulsory) ?? [],
     [template],
   );
+
+  const allocationCount = useMemo(
+    () => Object.values(selectedOptionalIds).reduce((total, ids) => total + ids.length, 0),
+    [selectedOptionalIds],
+  );
+
+  const allocationGridColumns = useMemo(() => {
+    const optionalColumns = optionalItems.map(() => "minmax(8rem, 0.8fr)").join(" ");
+    return `minmax(16rem, 1.5fr) minmax(7rem, 0.8fr) ${optionalColumns}`.trim();
+  }, [optionalItems]);
 
   useEffect(() => {
     void load();
@@ -85,7 +110,7 @@ export default function BillingGeneratePage() {
         due_date: dueDate || undefined,
         optional_allocations: students.map((student) => ({
           student_id: student.id,
-          selected_line_item_ids: selectedOptionalIds[template?.id ?? ""] ?? [],
+          selected_line_item_ids: selectedOptionalIds[student.id] ?? [],
         })),
       };
 
@@ -97,13 +122,12 @@ export default function BillingGeneratePage() {
     }
   }
 
-  function toggleOptionalItem(itemId: string) {
-    if (!template) return;
+  function toggleStudentOptional(studentId: string, itemId: string) {
     setSelectedOptionalIds((current) => {
-      const ids = current[template.id] ?? [];
+      const ids = current[studentId] ?? [];
       return {
         ...current,
-        [template.id]: ids.includes(itemId) ? ids.filter((value) => value !== itemId) : [...ids, itemId],
+        [studentId]: ids.includes(itemId) ? ids.filter((value) => value !== itemId) : [...ids, itemId],
       };
     });
   }
@@ -198,18 +222,50 @@ export default function BillingGeneratePage() {
 
           {optionalItems.length > 0 && (
             <div className="mt-6 rounded-xl border border-border/70 bg-surface-container-low p-4">
-              <h2 className="font-semibold text-on-surface">Optional allocations</h2>
-              <p className="mt-1 text-sm text-on-surface-variant">Choose any optional line items to attach to every active student in this class.</p>
-              <div className="mt-4 flex flex-wrap gap-3">
-                {optionalItems.map((item) => {
-                  const isSelected = (selectedOptionalIds[template?.id ?? ""] ?? []).includes(item.id);
-                  return (
-                    <label key={item.id} className="flex items-center gap-2 rounded-full border border-border bg-white px-3 py-2 text-sm text-on-surface">
-                      <input type="checkbox" checked={isSelected} onChange={() => toggleOptionalItem(item.id)} />
-                      <span>{item.name}</span>
-                    </label>
-                  );
-                })}
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+                <div>
+                  <h2 className="font-semibold text-on-surface">Optional allocations</h2>
+                  <p className="mt-1 text-sm text-on-surface-variant">Tick the students who should receive each optional fee.</p>
+                </div>
+                <p className="text-xs text-on-surface-variant">
+                  {allocationCount} optional assignment{allocationCount === 1 ? "" : "s"} selected
+                </p>
+              </div>
+
+              <div className="mt-4 overflow-x-auto rounded-xl border border-border/70 bg-white">
+                <div className="min-w-[840px]">
+                  <div className="grid bg-surface-container-low px-4 py-3 text-[11px] font-label uppercase tracking-[0.35em] text-on-surface-variant" style={{ gridTemplateColumns: allocationGridColumns }}>
+                    <span>Student</span>
+                    <span>ID</span>
+                    {optionalItems.map((item) => (
+                      <span key={item.id} className="text-center">{item.name}</span>
+                    ))}
+                  </div>
+                  <div className="divide-y divide-border/70">
+                    {students.map((student) => (
+                      <div key={student.id} className="grid items-center px-4 py-3" style={{ gridTemplateColumns: allocationGridColumns }}>
+                        <div className="min-w-0">
+                          <p className="truncate font-medium text-on-surface">{student.first_name} {student.last_name}</p>
+                          <p className="truncate text-xs text-on-surface-variant">{student.school_class?.name ?? "Selected class"}</p>
+                        </div>
+                        <div className="truncate text-sm text-on-surface-variant">{student.silete_id}</div>
+                        {optionalItems.map((item) => {
+                          const isSelected = (selectedOptionalIds[student.id] ?? []).includes(item.id);
+                          return (
+                            <label key={item.id} className="flex items-center justify-center">
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                onChange={() => toggleStudentOptional(student.id, item.id)}
+                                aria-label={`Assign ${item.name} to ${student.first_name} ${student.last_name}`}
+                              />
+                            </label>
+                          );
+                        })}
+                      </div>
+                    ))}
+                  </div>
+                </div>
               </div>
             </div>
           )}

@@ -212,15 +212,17 @@ function LedgerLine({
 }) {
   return (
     <div
-      className="dash-rise flex items-center gap-3 py-3 first:pt-0 last:pb-0"
+      className="dash-rise flex flex-col gap-2 py-3 first:pt-0 last:pb-0 sm:flex-row sm:items-center sm:gap-3"
       style={{ animationDelay: `${delay}ms` }}
     >
       <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-border/70 bg-surface-container-low">
         <Icon className="h-4 w-4 text-on-surface-variant" />
       </div>
-      <span className="whitespace-nowrap text-sm text-on-surface-variant">{label}</span>
-      <span className="mx-1 min-w-0 flex-1 border-b border-dotted border-border translate-y-[-2px]" aria-hidden />
-      <span className="font-label whitespace-nowrap text-base font-semibold tabular-nums text-on-surface">{value}</span>
+      <div className="flex w-full items-end gap-2">
+        <span className="min-w-0 text-sm text-on-surface-variant">{label}</span>
+        <span className="mx-1 hidden min-w-0 flex-1 translate-y-[-2px] border-b border-dotted border-border sm:block" aria-hidden />
+        <span className="font-label whitespace-nowrap text-base font-semibold tabular-nums text-on-surface">{value}</span>
+      </div>
     </div>
   );
 }
@@ -334,17 +336,17 @@ export default function DashboardPage() {
             </>
           }
           action={(
-            <div className="flex flex-wrap items-center gap-3">
+            <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center">
               <Link
                 href="/dashboard/billing/generate"
-                className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-all hover:-translate-y-0.5 hover:bg-primary/90 hover:shadow-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-all hover:-translate-y-0.5 hover:bg-primary/90 hover:shadow-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary sm:w-auto"
               >
                 Generate invoices
                 <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
               </Link>
               <Link
                 href="/dashboard/setup"
-                className="inline-flex items-center gap-2 rounded-xl border border-border/70 bg-white/80 px-4 py-2.5 text-sm font-semibold text-on-surface transition-all hover:-translate-y-0.5 hover:bg-surface-container-low focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-border/70 bg-white/80 px-4 py-2.5 text-sm font-semibold text-on-surface transition-all hover:-translate-y-0.5 hover:bg-surface-container-low focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary sm:w-auto"
               >
                 Setup hub
               </Link>
@@ -386,7 +388,7 @@ export default function DashboardPage() {
               connecting line and numbering carry genuine meaning. */}
           <div className="relative mt-6">
             <div className="absolute left-0 right-0 top-[19px] hidden border-t border-dashed border-border md:block" aria-hidden />
-            <div className="grid gap-3 md:grid-cols-5">
+            <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-5">
               {setupSteps.map((step, index) => {
                 const completed = onboarding.steps[step.key];
                 return (
@@ -503,7 +505,7 @@ export default function DashboardPage() {
               Last 6 months
             </span>
           </div>
-          <div className="mt-5 h-[340px]">
+          <div className="mt-5 h-[260px] sm:h-[300px] md:h-[340px]">
             {isLoading ? (
               <div className="h-full animate-pulse rounded-[1.25rem] border border-border/70 bg-surface-container-low" />
             ) : (
@@ -537,7 +539,7 @@ export default function DashboardPage() {
             <p className="font-label text-[11px] uppercase tracking-[0.3em] text-primary">Invoice status</p>
             <h2 className="mt-2 font-headline text-xl text-on-surface">Payment mix</h2>
           </div>
-          <div className="mt-5 h-[300px]">
+          <div className="mt-5 h-[240px] sm:h-[270px] md:h-[300px]">
             {isLoading ? (
               <div className="h-full animate-pulse rounded-[1.25rem] border border-border/70 bg-surface-container-low" />
             ) : breakdownData.length > 0 ? (

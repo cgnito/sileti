@@ -27,6 +27,7 @@ export interface StudentSummary {
   silete_id?: string | null;
   status?: string | null;
   date_of_birth?: string | null;
+  school_class?: SchoolClass | null;
 }
 
 export interface InvoiceLineItem {
@@ -45,7 +46,7 @@ export interface InvoiceSummary {
   status: string;
   due_date?: string | null;
   items?: InvoiceLineItem[];
-  student?: StudentSummary;
+  student?: StudentSummary | null;
 }
 
 export interface InvoiceDetail extends InvoiceSummary {

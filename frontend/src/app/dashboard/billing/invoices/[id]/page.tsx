@@ -134,8 +134,13 @@ export default function InvoiceDetailPage() {
             <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
               <div>
                 <p className="text-sm font-medium text-on-surface-variant">Invoice #{invoice.id.slice(0, 8)}</p>
-                <h2 className="mt-2 font-headline text-2xl text-on-surface">{invoice.student?.first_name} {invoice.student?.last_name}</h2>
+                <h2 className="mt-2 font-headline text-2xl text-on-surface">
+                  {invoice.student?.first_name} {invoice.student?.last_name}
+                </h2>
                 <p className="mt-2 text-sm text-on-surface-variant">{invoice.session} · {invoice.term}</p>
+                <p className="mt-1 text-sm text-on-surface-variant">
+                  {invoice.student?.school_class?.name ?? "Unassigned class"}
+                </p>
               </div>
               <div className="rounded-xl border border-border/70 bg-surface-container-low px-4 py-3">
                 <p className="text-sm text-on-surface-variant">Current total</p>

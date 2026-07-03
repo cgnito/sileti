@@ -139,7 +139,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
       <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-border/70 to-transparent" />
 
       <aside
-        className={`fixed inset-y-0 left-0 z-40 w-60 border-r border-white/10 bg-[linear-gradient(180deg,rgba(35,26,17,0.98),rgba(35,26,17,0.94))] px-4 py-4 backdrop-blur-xl transition-transform duration-200 lg:translate-x-0 ${mobileOpen ? "translate-x-0" : "-translate-x-full"}`}
+        className={`fixed inset-y-0 left-0 z-40 flex w-60 max-h-screen flex-col overflow-hidden border-r border-white/10 bg-[linear-gradient(180deg,rgba(35,26,17,0.98),rgba(35,26,17,0.94))] px-4 py-4 backdrop-blur-xl transition-transform duration-200 lg:translate-x-0 ${mobileOpen ? "translate-x-0" : "-translate-x-full"}`}
       >
         <div className="flex items-center justify-between border-b border-white/10 pb-4">
           <Logo className="text-surface" />
@@ -148,7 +148,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
           </button>
         </div>
 
-        <div className="mt-6 space-y-6">
+        <div className="mt-6 flex-1 space-y-6 overflow-y-auto pr-1">
           {visibleNavGroups.map((group) => (
             <div key={group.title}>
               <p className="mb-2 px-3 text-[10px] font-label uppercase tracking-[0.35em] text-white/30">{group.title}</p>
@@ -173,7 +173,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
           ))}
         </div>
 
-        <div className="absolute bottom-4 left-4 right-4">
+        <div className="mt-4 shrink-0">
           <div className="rounded-xl border border-white/10 bg-white/5 p-3">
             <p className="truncate text-xs font-label uppercase tracking-[0.3em] text-white/50">{schoolName}</p>
             <button onClick={handleSignOut} className="mt-3 flex items-center gap-2 text-xs text-white/45 transition-colors hover:text-white">

@@ -233,7 +233,8 @@ def append_optional_fee_to_invoice(
     Automatically increments financial totals and syncs status fields securely.
     """
     invoice = db.query(models.Invoice).options(
-        selectinload(models.Invoice.items)
+        selectinload(models.Invoice.items),
+        joinedload(models.Invoice.student).joinedload(models.Student.school_class)
     ).filter(
         models.Invoice.id == invoice_id,
         models.Invoice.org_id == current_user.org_id
@@ -263,8 +264,14 @@ def append_optional_fee_to_invoice(
 
     sync_invoice_status(invoice)
     db.commit()
-    db.refresh(invoice)
-    return invoice
+    updated_invoice = db.query(models.Invoice).options(
+        selectinload(models.Invoice.items),
+        joinedload(models.Invoice.student).joinedload(models.Student.school_class)
+    ).filter(
+        models.Invoice.id == invoice_id,
+        models.Invoice.org_id == current_user.org_id
+    ).first()
+    return updated_invoice
 
 
 
@@ -281,7 +288,8 @@ def remove_fee_item_from_invoice(
     Deducts item price from master total and automatically re-evaluates payment statuses.
     """
     invoice = db.query(models.Invoice).options(
-        selectinload(models.Invoice.items)
+        selectinload(models.Invoice.items),
+        joinedload(models.Invoice.student).joinedload(models.Student.school_class)
     ).filter(
         models.Invoice.id == invoice_id,
         models.Invoice.org_id == current_user.org_id
@@ -309,8 +317,14 @@ def remove_fee_item_from_invoice(
 
     sync_invoice_status(invoice)
     db.commit()
-    db.refresh(invoice)
-    return invoice
+    updated_invoice = db.query(models.Invoice).options(
+        selectinload(models.Invoice.items),
+        joinedload(models.Invoice.student).joinedload(models.Student.school_class)
+    ).filter(
+        models.Invoice.id == invoice_id,
+        models.Invoice.org_id == current_user.org_id
+    ).first()
+    return updated_invoice
 
 
 
@@ -329,7 +343,7 @@ def list_invoices(
     """
     query = db.query(models.Invoice).options(
         selectinload(models.Invoice.items),
-        joinedload(models.Invoice.student)  # Optimization: Eagerly map student identifiers
+        joinedload(models.Invoice.student).joinedload(models.Student.school_class)  # Optimization: Eagerly map student identifiers and class snapshots
     ).filter(models.Invoice.org_id == current_user.org_id)
 
     if class_id:
@@ -366,7 +380,7 @@ def get_single_invoice(
     """
     invoice = db.query(models.Invoice).options(
         selectinload(models.Invoice.items),
-        joinedload(models.Invoice.student)  # Trace individual student profiles transparently
+        joinedload(models.Invoice.student).joinedload(models.Student.school_class)  # Trace individual student profiles transparently
     ).filter(
         models.Invoice.id == invoice_id,
         models.Invoice.org_id == current_user.org_id  # Security Patch: Multi-tenant tenant boundary guard

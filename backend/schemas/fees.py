@@ -120,6 +120,34 @@ class InvoiceDetailResponse(BaseModel):
         from_attributes = True
 
 
+class InvoiceSchoolClassResponse(BaseModel):
+    """Nested class payload attached to invoice student snapshots."""
+    id: UUID
+    org_id: UUID
+    name: str
+    level: int
+
+    class Config:
+        from_attributes = True
+
+
+class InvoiceStudentResponse(BaseModel):
+    """Nested student payload attached to invoice snapshots."""
+    id: UUID
+    first_name: str
+    last_name: str
+    silete_id: str
+    org_id: UUID
+    class_id: Optional[UUID] = None
+    status: str
+    admission_year: int
+    date_of_birth: Optional[date] = None
+    school_class: Optional[InvoiceSchoolClassResponse] = None
+
+    class Config:
+        from_attributes = True
+
+
 class InvoiceResponse(BaseModel):
     """Formats the master invoice statement for client dashboards and parent bills."""
     id: UUID
@@ -131,6 +159,7 @@ class InvoiceResponse(BaseModel):
     status: str  # e.g., "unpaid", "partially_paid", "paid"
     due_date: Optional[date] = None
     items: list[InvoiceDetailResponse]  # Returns the full sub-item breakdown array
+    student: Optional[InvoiceStudentResponse] = None
 
     class Config:
         from_attributes = True

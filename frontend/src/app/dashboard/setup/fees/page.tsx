@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { ChevronLeft, Plus, Trash2 } from "lucide-react";
+import { ChevronLeft, PencilLine, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/src/components/shared/Button";
 import { apiClient } from "@/src/shared/api-client";
 import { DashboardEmptyState, DashboardHero, DashboardPageShell, DashboardPanel } from "@/src/components/dashboard/PageChrome";
@@ -28,6 +28,7 @@ type FeeTemplate = {
 
 export default function FeesSetupPage() {
   const [templates, setTemplates] = useState<FeeTemplate[]>([]);
+  const [search, setSearch] = useState("");
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [lineItems, setLineItems] = useState<FeeTemplateLineItem[]>([createLineItem()]);
@@ -73,6 +74,16 @@ export default function FeesSetupPage() {
   function removeLineItem(lineItemId: string) {
     setLineItems((current) => current.filter((item) => item.id !== lineItemId));
   }
+
+  const filteredTemplates = templates.filter((template) => {
+    const query = search.trim().toLowerCase();
+    if (!query) return true;
+    return (
+      template.name.toLowerCase().includes(query) ||
+      (template.description ?? "").toLowerCase().includes(query) ||
+      template.line_items.some((item) => item.name.toLowerCase().includes(query))
+    );
+  });
 
   async function handleCreateTemplate() {
     const payloadLineItems = lineItems
@@ -182,51 +193,79 @@ export default function FeesSetupPage() {
       </DashboardPanel>
 
       <DashboardPanel>
-        <h2 className="font-headline text-lg text-on-surface">Existing templates</h2>
+        <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+          <div>
+            <h2 className="font-headline text-lg text-on-surface">Existing templates</h2>
+            <p className="mt-1 text-sm text-on-surface-variant">Search by template name, description, or line item.</p>
+          </div>
+          <label className="space-y-2 text-sm text-on-surface-variant md:min-w-[18rem]">
+            <span className="block font-medium">Search</span>
+            <input
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              className="w-full rounded-lg border border-border bg-white px-3 py-2.5 text-sm text-on-surface outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/20"
+              placeholder="Search templates"
+            />
+          </label>
+        </div>
         {isLoading ? (
           <div className="mt-4 grid gap-4 md:grid-cols-2">
             {Array.from({ length: 4 }).map((_, index) => <div key={index} className="h-28 animate-pulse rounded-xl border border-border/70 bg-surface-container-low" />)}
           </div>
-        ) : templates.length === 0 ? (
+        ) : filteredTemplates.length === 0 ? (
           <DashboardEmptyState className="mt-4" title="No fee templates yet" description="Create your first package to get started." />
         ) : (
-          <div className="mt-4 grid gap-4 md:grid-cols-2">
-            {templates.map((template) => {
-              const total = template.line_items.reduce((sum, item) => sum + Number(item.amount ?? 0), 0);
-              return (
-                <div key={template.id} className="rounded-xl border border-border/70 bg-surface-container-low p-4">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="font-semibold text-on-surface">{template.name}</p>
-                      <p className="mt-1 text-sm text-on-surface-variant">{template.description || "No description"}</p>
-                    </div>
-                    <button className="rounded-md p-1.5 text-on-surface-variant transition-colors hover:bg-white hover:text-error" onClick={() => void handleDelete(template.id)}>
-                      <Trash2 className="h-4 w-4" />
-                    </button>
-                  </div>
-                  <div className="mt-4 space-y-2">
-                    {template.line_items.map((item) => (
-                      <div key={item.id} className="flex items-center justify-between rounded-lg border border-border/70 bg-white px-3 py-2 text-sm">
-                        <span className="text-on-surface">{item.name}</span>
-                        <span className="text-on-surface-variant">{Number(item.amount).toLocaleString("en-NG")}</span>
+          <div className="mt-4 overflow-x-auto rounded-xl border border-border/70">
+            <div className="min-w-[920px]">
+              <div className="grid grid-cols-[1.2fr_1.2fr_0.6fr_0.6fr_0.9fr] bg-surface-container-low px-4 py-3 text-[11px] font-label uppercase tracking-[0.35em] text-on-surface-variant">
+                <span>Template</span>
+                <span>Description</span>
+                <span>Items</span>
+                <span>Total</span>
+                <span>Actions</span>
+              </div>
+              <div className="divide-y divide-border/70 bg-white">
+                {filteredTemplates.map((template) => {
+                  const total = template.line_items.reduce((sum, item) => sum + Number(item.amount ?? 0), 0);
+                  return (
+                    <div key={template.id} className="grid grid-cols-[1.2fr_1.2fr_0.6fr_0.6fr_0.9fr] items-center px-4 py-4 transition-colors hover:bg-surface-container-low">
+                      <div className="min-w-0">
+                        <Link href={`/dashboard/setup/fees/${template.id}`} className="truncate font-semibold text-on-surface underline-offset-4 hover:underline">
+                          {template.name}
+                        </Link>
                       </div>
-                    ))}
-                  </div>
-                  <div className="mt-4 flex items-center justify-between border-t border-border/70 pt-3 text-sm">
-                    <span className="text-on-surface-variant">{template.line_items.length} line item(s)</span>
-                    <div className="flex items-center gap-4">
-                      <Link href={`/dashboard/setup/fees/${template.id}`} className="font-semibold text-primary underline underline-offset-4">
-                        View details
-                      </Link>
-                      <Link href={`/dashboard/setup/fees/${template.id}/edit`} className="font-semibold text-primary underline underline-offset-4">
-                        Edit template
-                      </Link>
-                      <span className="font-semibold text-on-surface">Total {total.toLocaleString("en-NG")}</span>
+                      <div className="min-w-0 text-sm text-on-surface-variant">
+                        <p className="truncate">{template.description || "No description"}</p>
+                      </div>
+                      <div className="text-sm text-on-surface-variant">{template.line_items.length}</div>
+                      <div className="text-sm font-semibold text-on-surface">{total.toLocaleString("en-NG")}</div>
+                      <div className="flex items-center gap-2 text-sm">
+                        <Link href={`/dashboard/setup/fees/${template.id}`} className="font-semibold text-primary underline underline-offset-4">
+                          View details
+                        </Link>
+                        <Link
+                          href={`/dashboard/setup/fees/${template.id}/edit`}
+                          className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-border/70 bg-surface-container-low text-on-surface-variant transition-colors hover:bg-primary/10 hover:text-primary"
+                          aria-label={`Edit ${template.name}`}
+                          title="Edit template"
+                        >
+                          <PencilLine className="h-4 w-4" />
+                        </Link>
+                        <button
+                          type="button"
+                          className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-border/70 bg-surface-container-low text-on-surface-variant transition-colors hover:bg-error/10 hover:text-error"
+                          aria-label={`Delete ${template.name}`}
+                          title="Delete template"
+                          onClick={() => void handleDelete(template.id)}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                </div>
-              );
-            })}
+                  );
+                })}
+              </div>
+            </div>
           </div>
         )}
       </DashboardPanel>

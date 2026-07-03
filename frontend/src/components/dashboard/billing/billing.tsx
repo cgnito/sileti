@@ -160,31 +160,44 @@ export default function BillingListPage() {
             description="No invoices match those filters yet. Generate a batch to populate this list."
           />
         ) : (
-          <div className="overflow-hidden rounded-xl border border-border/70">
-            <div className="grid grid-cols-[1.4fr_0.8fr_0.8fr_0.8fr_0.6fr] bg-surface-container-low px-4 py-3 text-[11px] font-label uppercase tracking-[0.35em] text-on-surface-variant">
-              <span>Student</span>
-              <span>Class</span>
-              <span>Amount</span>
-              <span>Status</span>
-              <span>Due</span>
-            </div>
-            <div className="divide-y divide-border/70 bg-white">
-              {invoices.map((invoice) => (
-                <Link key={invoice.id} href={`/dashboard/billing/invoices/${invoice.id}`} className="grid grid-cols-[1.4fr_0.8fr_0.8fr_0.8fr_0.6fr] items-center px-4 py-4 transition-colors hover:bg-surface-container-low">
-                  <div>
-                    <p className="font-medium text-on-surface">{invoice.student?.first_name && invoice.student?.last_name ? `${invoice.student.first_name} ${invoice.student.last_name}` : "Student record"}</p>
-                    <p className="text-xs text-on-surface-variant">{invoice.session} · {invoice.term}</p>
-                  </div>
-                  <div className="text-sm text-on-surface-variant">{invoice.student?.class_id ? "Class assigned" : "Pending class"}</div>
-                  <div className="text-sm font-semibold text-on-surface">{formatCurrency(invoice.total_amount)}</div>
-                  <div>
-                    <span className={`inline-flex rounded-full border px-3 py-1 text-xs font-semibold ${invoice.status === "paid" ? "border-green-200 bg-green-50 text-green-700" : invoice.status === "voided" ? "border-border bg-surface-container-low text-on-surface-variant" : "border-amber-200 bg-amber-50 text-amber-700"}`}>
-                      {invoice.status}
-                    </span>
-                  </div>
-                  <div className="text-sm text-on-surface-variant">{formatDate(invoice.due_date)}</div>
-                </Link>
-              ))}
+          <div className="overflow-x-auto rounded-xl border border-border/70">
+            <div className="min-w-[860px]">
+              <div className="grid grid-cols-[1.4fr_0.8fr_0.8fr_0.8fr_0.6fr] bg-surface-container-low px-4 py-3 text-[11px] font-label uppercase tracking-[0.35em] text-on-surface-variant">
+                <span>Student</span>
+                <span>Class</span>
+                <span>Amount</span>
+                <span>Status</span>
+                <span>Due</span>
+              </div>
+              <div className="divide-y divide-border/70 bg-white">
+                {invoices.map((invoice) => (
+                  <Link key={invoice.id} href={`/dashboard/billing/invoices/${invoice.id}`} className="grid grid-cols-[1.4fr_0.8fr_0.8fr_0.8fr_0.6fr] items-center px-4 py-4 transition-colors hover:bg-surface-container-low">
+                    <div className="min-w-0">
+                      <p className="truncate font-medium text-on-surface">
+                        {invoice.student?.first_name && invoice.student?.last_name
+                          ? `${invoice.student.first_name} ${invoice.student.last_name}`
+                          : "Student record"}
+                      </p>
+                      <p className="truncate text-xs text-on-surface-variant">{invoice.session} · {invoice.term}</p>
+                    </div>
+                    <div className="min-w-0 text-sm text-on-surface-variant">
+                      <p className="truncate font-medium text-on-surface">
+                        {invoice.student?.school_class?.name ?? "Unassigned class"}
+                      </p>
+                      {invoice.student?.school_class?.level ? (
+                        <p className="text-xs text-on-surface-variant">Level {invoice.student.school_class.level}</p>
+                      ) : null}
+                    </div>
+                    <div className="text-sm font-semibold text-on-surface">{formatCurrency(invoice.total_amount)}</div>
+                    <div>
+                      <span className={`inline-flex rounded-full border px-3 py-1 text-xs font-semibold ${invoice.status === "paid" ? "border-green-200 bg-green-50 text-green-700" : invoice.status === "voided" ? "border-border bg-surface-container-low text-on-surface-variant" : "border-amber-200 bg-amber-50 text-amber-700"}`}>
+                        {invoice.status}
+                      </span>
+                    </div>
+                    <div className="text-sm text-on-surface-variant">{formatDate(invoice.due_date)}</div>
+                  </Link>
+                ))}
+              </div>
             </div>
           </div>
         )}
