@@ -283,7 +283,7 @@ def get_dashboard_metrics(
         ],
     }
 
-
+# -- TO FIX ----
 
 # get supported banks and perform account lookups via nomba api
 @router.get("/banks", status_code=status.HTTP_200_OK)
@@ -295,7 +295,7 @@ def get_supported_banks(
     """
     try:
         # trigger outbound live proxy query against nomba's sandbox transfers bank list route
-        response_data = payments.make_nomba_request(method="GET", endpoint="/transfers/banks")
+        response_data = payments.make_nomba_request(method="GET", endpoint="v2/transfers/banks")
         
         # parse incoming response array and map parameters to match frontend key properties
         raw_banks = response_data.get("data", {}).get("results", [])
@@ -331,7 +331,7 @@ def verify_bank_account_name(
         # fire standard post request targeting sandbox lookup validation channel
         response_data = payments.make_nomba_request(
             method="POST", 
-            endpoint="/transfers/bank/lookup", 
+            endpoint="v2/transfers/bank/lookup", 
             payload=payload
         )
         
@@ -367,52 +367,11 @@ def get_bank_settlement(
     return settlement
 
 
-# submit bank settlement details for the current school organization and create a nomba subaccount
-@router.post("/bank-settlement", response_model=schemas.BankSettlementResponse, status_code=status.HTTP_201_CREATED)
-def setup_bank_settlement(
-    bank_input: schemas.BankSettlementCreate,
-    current_admin: security.AuthContext = Depends(security.allow_admin_only),
-    db: Session = Depends(get_db)
-):
-    """
-    registers validated banking data and creates an isolated subaccount routing target.
-    """
-    org = current_admin.organization
-    if not org:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, 
-            detail="organization record missing"
-        )
+# submit bank settlement details for the current school organization and create a nomba va under the sub account
+# i'll need to update the models for va account name and reference, might need to update schemas too
 
-    # prevent duplicated configurations if a banking settlement row already exists
-    existing_bank = db.query(models.BankSettlement).filter(models.BankSettlement.org_id == org.id).first()
-    if existing_bank:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="bank settlement records have already been registered for this school"
-        )
 
-    # provision static allocated workspace credentials bound inside environment configurations
-    generated_subaccount_id = payments.NOMBA_HACKATHON_SUBACCOUNT
 
-    # compile and insert the database record mapping
-    new_settlement = models.BankSettlement(
-        org_id=org.id,
-        bank_name=bank_input.bank_name,
-        bank_code=bank_input.bank_code,
-        account_number=bank_input.account_number,
-        account_name=bank_input.account_name,
-        nomba_subaccount_id=generated_subaccount_id
-    )
-
-    # modify flag status on parent org profile row to confirm completion of step
-    org.has_setup_bank = True
-
-    db.add(new_settlement)
-    db.commit()
-    db.refresh(new_settlement)
-
-    return new_settlement
 
 # update existing bank settlement details for the current school organization and synchronize with nomba
 @router.patch("/bank-settlement", response_model=schemas.BankSettlementResponse)
@@ -434,7 +393,7 @@ def update_bank_settlement(
     # find the existing settlement profile row
     settlement = db.query(models.BankSettlement).filter(models.BankSettlement.org_id == org.id).first()
     if not settlement:
-        # fixed: changed status_code from 444 to 404 to avoid fastapi runtime crashing
+
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="no bank settlement record found to update. please create one first."
@@ -456,7 +415,7 @@ def update_bank_settlement(
             # hit nomba API sandbox to run verification check routine
             response_data = payments.make_nomba_request(
                 method="POST", 
-                endpoint="/transfers/bank/lookup", 
+                endpoint="v2/transfers/bank/lookup", 
                 payload=payload
             )
             resolved_data = response_data.get("data", {})

@@ -15,115 +15,8 @@ logger = logging.getLogger(__name__)
 
 ai_client = genai.Client()
 
-
-# --- TOOL 1: VERIFY STUDENT RECORD ---
-def verify_student_by_id(student_id: str, db: Session) -> dict:
-    """
-    Queries the database to find a student by their unique human-readable silete_id.
-    Returns a dictionary containing the student's full name, their unique identifier, 
-    and the school (organization) name they belong to.
-    """
-    # Normalize inputs (e.g., KWA-2026-0001 -> KWA/2026/0001)
-    normalized_id = student_id.replace("-", "/").strip()
-    
-    # Look up the student record in the database
-    student = db.query(models.Student).filter(models.Student.silete_id == normalized_id).first()
-    if not student:
-        return {"error": f"No student found with ID {student_id}"}
-    
-    # Fetch the linked organization to get the school name
-    school = db.query(models.Organization).filter(models.Organization.id == student.org_id).first()
-    school_name = school.school_name if school else "Unknown School"
-    
-    return {
-        "student_name": f"{student.first_name} {student.last_name}",
-        "silete_id": student.silete_id,
-        "school_name": school_name,
-        "student_uuid": str(student.id)
-    }
-
-
-# --- TOOL 2: LINK PARENT TO STUDENT ---
-def link_parent_to_student(student_id: str, phone_number: str, db: Session) -> dict:
-    """
-    Registers or finds a parent by their phone number and securely links them 
-    to the student record in the database via the many-to-many relationship.
-    Returns the unpaid invoice amount for the student.
-    """
-    normalized_id = student_id.replace("-", "/").strip()
-    
-    student = db.query(models.Student).filter(models.Student.silete_id == normalized_id).first()
-    if not student:
-        return {"error": f"Student matching {student_id} not found during link phase"}
-        
-    # Check if a parent with this phone number already exists
-    parent = db.query(models.Parent).filter(models.Parent.primary_phone == phone_number).first()
-    
-    if not parent:
-        # Create a new parent record mapped to the same school ecosystem organization
-        parent = models.Parent(
-            org_id=student.org_id,
-            primary_phone=phone_number,
-            is_verified=True
-        )
-        db.add(parent)
-        db.flush() 
-        
-    # Associate the student with the parent if not already linked
-    if student not in parent.students:
-        parent.students.append(student)
-        
-    # Fetch outstanding unpaid or partially paid invoices for this student
-    unpaid_invoice = db.query(models.Invoice).filter(
-        models.Invoice.student_id == student.id,
-        models.Invoice.status != models.InvoiceStatus.PAID
-    ).first()
-    
-    total_due = float(unpaid_invoice.total_amount - unpaid_invoice.paid_amount) if unpaid_invoice else 0.00
-    term_info = f"{unpaid_invoice.term} ({unpaid_invoice.session})" if unpaid_invoice else "current term"
-
-    db.commit()
-    
-    return {
-        "success": True,
-        "student_name": f"{student.first_name} {student.last_name}",
-        "total_due": total_due,
-        "term_info": term_info
-    }
-
-
-# --- TOOL 3: GENERATE SECURE PAYMENT LINK ---
-def generate_payment_link(student_id: str, amount_to_pay: float, db: Session) -> dict:
-    """
-    Generates a secure Nomba checkout URL for a specific student's payment event.
-    Accepts the amount as a float/integer representing standard Naira.
-    """
-    normalized_id = student_id.replace("-", "/").strip()
-    student = db.query(models.Student).filter(models.Student.silete_id == normalized_id).first()
-    if not student:
-        return {"error": "Student record missing during payment initialization."}
-        
-    # Fixed lookup logic: Join through bank_settlement table relationship defined in Organization model
-    settlement = db.query(models.BankSettlement).filter(models.BankSettlement.org_id == student.org_id).first()
-    subaccount_id = settlement.nomba_subaccount_id if settlement else None
-
-    order_ref = f"SIL-{uuid.uuid4().hex[:12].upper()}"
-    
-    # Convert standard Naira input into absolute integer Kobo for Nomba processing
-    amount_kobo = int(amount_to_pay * 100)
-    
-    try:
-        checkout_url = payments.create_checkout_order(
-            amount_kobo=amount_kobo,
-            order_ref=order_ref,
-            school_subaccount_id=subaccount_id,
-            customer_email=student.parent_email
-        )
-        return {"success": True, "checkout_url": checkout_url, "amount": amount_to_pay}
-    except Exception as e:
-        logger.error(f"Nomba order generation caught an exception: {str(e)}")
-        return {"error": f"Could not generate secure session link: {str(e)}"}
-
+# in-memory cache to persist conversational history across separate webhook requests
+conversation_sessions = {}
 
 # --- SYSTEM PROMPT TEMPLATE ---
 SYSTEM_INSTRUCTION = """
@@ -146,7 +39,7 @@ you must guide the parent step-by-step through this exact sequence. do not skip 
 
 3. PARENT-STUDENT LINKING (ACCOUNT CREATION)
    - trigger condition: when the parent explicitly responds "yes" confirming the child's identity match.
-   - action: you MUST call the tool function `link_parent_to_student` using the current active conversation context.
+   - action: you MUST call the tool function `link_parent_to_student` passing ONLY the student_id parameter.
    - next prompt: after the tool finishes running successfully, display the outstanding invoice balance and term details returned by the tool, then ask: "would you like to pay this balance in full or make a part payment?"
 
 4. AMOUNT CAPTURE (PART PAYMENT NEGOTIATION)
@@ -169,18 +62,86 @@ you must guide the parent step-by-step through this exact sequence. do not skip 
 # --- THE WEBHOOK ROUTE WITH DYNAMIC EXECUTION ENGINE ---
 @router.post("/webhook")
 async def whatsapp_assistant_webhook(
-    From: str = Form(...),      # incoming parent phone number identifier
-    Body: str = Form(...),      # the raw text content sent by the user
+    From: str = Form(...),      
+    Body: str = Form(...),      
     db: Session = Depends(get_db)
 ):
     user_message = Body.strip()
     parent_phone = From.replace("whatsapp:", "").strip()
+    logger.info(f"incoming webhook raw phone number string: {parent_phone}")
 
+    def verify_student_by_id(student_id: str) -> dict:
+        normalized_id = student_id.replace("-", "/").strip()
+        student = db.query(models.Student).filter(models.Student.silete_id == normalized_id).first()
+        if not student:
+            return {"error": f"No student found with ID {student_id}"}
+        school = db.query(models.Organization).filter(models.Organization.id == student.org_id).first()
+        school_name = school.school_name if school else "Unknown School"
+        return {
+            "student_name": f"{student.first_name} {student.last_name}",
+            "silete_id": student.silete_id,
+            "school_name": school_name,
+            "student_uuid": str(student.id)
+        }
+
+    
+    def link_parent_to_student(student_id: str) -> dict:
+        normalized_id = student_id.replace("-", "/").strip()
+        student = db.query(models.Student).filter(models.Student.silete_id == normalized_id).first()
+        if not student:
+            return {"error": f"Student matching {student_id} not found during link phase"}
+        
+        # Securely use parent_phone from the outer FastAPI request scope directly!
+        parent = db.query(models.Parent).filter(models.Parent.primary_phone == parent_phone).first()
+        if not parent:
+            parent = models.Parent(org_id=student.org_id, primary_phone=parent_phone, is_verified=True)
+            db.add(parent)
+            db.flush() 
+        if student not in parent.students:
+            parent.students.append(student)
+            
+        unpaid_invoice = db.query(models.Invoice).filter(
+            models.Invoice.student_id == student.id, models.Invoice.status != models.InvoiceStatus.PAID
+        ).first()
+        total_due = float(unpaid_invoice.total_amount - unpaid_invoice.paid_amount) if unpaid_invoice else 0.00
+        term_info = f"{unpaid_invoice.term} ({unpaid_invoice.session})" if unpaid_invoice else "current term"
+        db.commit()
+        return {"success": True, "student_name": f"{student.first_name} {student.last_name}", "total_due": total_due, "term_info": term_info}
+
+    def generate_payment_link(student_id: str, amount_to_pay: float) -> dict:
+        normalized_id = student_id.replace("-", "/").strip()
+        student = db.query(models.Student).filter(models.Student.silete_id == normalized_id).first()
+        if not student:
+            return {"error": "Student record missing during payment initialization."}
+        settlement = db.query(models.BankSettlement).filter(models.BankSettlement.org_id == student.org_id).first()
+        subaccount_id = settlement.nomba_subaccount_id if settlement else None
+        order_ref = f"SIL-{uuid.uuid4().hex[:12].upper()}"
+        amount_kobo = int(amount_to_pay * 100)
+        try:
+            checkout_url = payments.create_checkout_order(
+                amount_kobo=amount_kobo, order_ref=order_ref, school_subaccount_id=subaccount_id, customer_email=student.parent_email
+            )
+            return {"success": True, "checkout_url": checkout_url, "amount": amount_to_pay}
+        except Exception as e:
+            logger.error(f"Nomba order generation caught an exception: {str(e)}")
+            return {"error": f"Could not generate secure session link: {str(e)}"}
+
+    # --- EXECUTE GEMINI CALL ---
     try:
-        # inject all three tools into the model configuration block
+        # retrieve session history or create a new one if it does not exist
+        if parent_phone not in conversation_sessions:
+            conversation_sessions[parent_phone] = []
+            
+        chat_history = conversation_sessions[parent_phone]
+        
+        # append the incoming message from the user to the session timeline
+        chat_history.append(
+            types.Content(role="user", parts=[types.Part.from_text(text=user_message)])
+        )
+        
         ai_response = ai_client.models.generate_content(
             model='gemini-2.5-flash',
-            contents=user_message,
+            contents=chat_history,
             config=types.GenerateContentConfig(
                 system_instruction=SYSTEM_INSTRUCTION,
                 temperature=0.2, 
@@ -188,63 +149,61 @@ async def whatsapp_assistant_webhook(
             )
         )
         
-        reply_content = ai_response.text
-
-        # --- DYNAMIC FUNCTION PROCESSING ---
+        # process execution loop if the model requires data parameters from internal tools
         if ai_response.function_calls:
+            # append model tool call intent to the context timeline history
+            chat_history.append(ai_response.candidates[0].content)
+            
+            tool_responses = []
             for call in ai_response.function_calls:
-                
-                # Handle Tool 1: Lookup record
                 if call.name == "verify_student_by_id":
                     student_id_arg = call.args.get("student_id")
-                    tool_result = verify_student_by_id(student_id=student_id_arg, db=db)
+                    tool_result = verify_student_by_id(student_id=student_id_arg)
                     
-                    if "error" in tool_result:
-                        reply_content = f"sorry, i couldn't find any student with id '{student_id_arg}' in our system. please double-check the id and try again."
-                    else:
-                        reply_content = (
-                            f"i found a record for {tool_result['student_name']} at {tool_result['school_name']}.\n\n"
-                            f"is this your child? please reply with 'yes' or 'no'."
-                        )
-
-                # Handle Tool 2: Linking profile rows
                 elif call.name == "link_parent_to_student":
                     student_id_arg = call.args.get("student_id")
-                    tool_result = link_parent_to_student(
-                        student_id=student_id_arg, 
-                        phone_number=parent_phone, 
-                        db=db
-                    )
+                    tool_result = link_parent_to_student(student_id=student_id_arg)
                     
-                    if "error" in tool_result:
-                        reply_content = "something went wrong verifying the record profile. please try entering your child's student id again."
-                    else:
-                        reply_content = (
-                            f"thank you! i have securely linked your phone number to {tool_result['student_name']}'s profile.\n\n"
-                            f"their total outstanding fee for {tool_result['term_info']} is ₦{tool_result['total_due']:,}. "
-                            "would you like to pay this balance in full or make a part payment?"
-                        )
-
-                # Handle Tool 3: Generate dynamic checkout links
                 elif call.name == "generate_payment_link":
                     student_id_arg = call.args.get("student_id")
                     amount_arg = float(call.args.get("amount_to_pay"))
-    
-                    payment_result = generate_payment_link(student_id=student_id_arg, amount_to_pay=amount_arg, db=db)
-                    if "error" in payment_result:
-                        reply_content = "i couldn't generate your payment session link at the moment. please try again."
-                    else:
-                        reply_content = (
-                            f"here is your secure payment link for ₦{payment_result['amount']:,}:\n\n"
-                            f"{payment_result['checkout_url']}\n\n"
-                            "you can complete this transaction safely via bank transfer, ussd, or card payment methods."
-                        )
+                    tool_result = generate_payment_link(student_id=student_id_arg, amount_to_pay=amount_arg)
+                
+                # package tool payload structures back into gemini format
+                tool_responses.append(
+                    types.Part.from_function_response(
+                        name=call.name,
+                        response={"result": tool_result}
+                    )
+                )
+            
+            # append tool payload results directly to chat context history
+            chat_history.append(types.Content(role="tool", parts=tool_responses))
+            
+            # make follow up turn call allowing gemini to process tool metrics and context instructions
+            final_response = ai_client.models.generate_content(
+                model='gemini-2.5-flash',
+                contents=chat_history,
+                config=types.GenerateContentConfig(
+                    system_instruction=SYSTEM_INSTRUCTION,
+                    temperature=0.2,
+                )
+            )
+            reply_content = final_response.text
+            
+            # append final response text to history to maintain multi turn context continuity
+            if final_response.candidates and final_response.candidates[0].content:
+                chat_history.append(final_response.candidates[0].content)
+        else:
+            # handle default text output conditions directly if no tools are invoked
+            reply_content = ai_response.text
+            if ai_response.candidates and ai_response.candidates[0].content:
+                chat_history.append(ai_response.candidates[0].content)
 
     except Exception as error:
         logger.error(f"Webhook processing error context: {str(error)}")
         reply_content = "i am experiencing a slight network glitch. please try messaging me again shortly!"
 
-    # Format response into raw TwiML XML string block for Twilio
     twiml_payload = f"""<?xml version="1.0" encoding="UTF-8"?>
 <Response>
     <Message>{reply_content}</Message>
