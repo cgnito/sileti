@@ -114,7 +114,7 @@ async def whatsapp_assistant_webhook(
         if not student:
             return {"error": "Student record missing during payment initialization."}
         settlement = db.query(models.BankSettlement).filter(models.BankSettlement.org_id == student.org_id).first()
-        subaccount_id = settlement.nomba_subaccount_id if settlement else None
+        subaccount_id = payments._get_hackathon_subaccount_id()
         order_ref = f"SIL-{uuid.uuid4().hex[:12].upper()}"
         amount_kobo = int(amount_to_pay * 100)
         try:

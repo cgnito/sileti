@@ -1,157 +1,247 @@
+# NEED COME BACK AND CLEAN UP TOO, IF NEEDED
 import os
 import time
 import logging
+from datetime import datetime, timezone
 import requests
 from fastapi import HTTPException, status
 
 logger = logging.getLogger(__name__)
 
-# Sandbox URL used exclusively for the hackathon context
-NOMBA_BASE_URL = "https://sandbox.api.nomba.com/"
-NOMBA_ACCOUNT_ID = os.environ.get("NOMBA_ACCOUNT_ID")
-NOMBA_CLIENT_ID = os.environ.get("NOMBA_CLIENT_ID")
-NOMBA_CLIENT_SECRET = os.environ.get("NOMBA_CLIENT_SECRET")
-
-# Fallback static hackathon sub-account id 
+# Fallback static hackathon sub-account id
 NOMBA_HACKATHON_SUBACCOUNT = os.environ.get("NOMBA_HACKATHON_SUBACCOUNT")
+
+
+def _get_hackathon_subaccount_id() -> str | None:
+    return os.environ.get("NOMBA_HACKATHON_SUBACCOUNT") or NOMBA_HACKATHON_SUBACCOUNT
 
 # In-memory token cache store to prevent redundant token initialization requests
 _token_cache = {
     "access_token": None,
-    "expires_at": 0
+    "refresh_token": None,
+    "expires_at": 0,
+    "business_id": None,
 }
 
-def get_nomba_access_token() -> str:
-    """
-    Retrieves a valid OAuth2 access token using client_credentials grant type.
-    Caches the token for up to 25 minutes to comply with the 30-minute expiration rule safely.
-    """
-    current_time = time.time()
-    
-    # Reuse the cached token if it is still completely valid and hasn't expired yet
-    if _token_cache["access_token"] and current_time < _token_cache["expires_at"]:
-        return _token_cache["access_token"]
-        
-    logger.info("Nomba token expired or missing. Fetching fresh access token from sandbox.")
-    
-    url = f"{NOMBA_BASE_URL}v1/auth/token/issue"
-    headers = {
-        "content-type": "application/json",
-        "accountid": NOMBA_ACCOUNT_ID
-    }
-    payload = {
-        "grant_type": "client_credentials",
-        "client_id": NOMBA_CLIENT_ID,
-        "client_secret": NOMBA_CLIENT_SECRET
-    }
-    
+
+def _normalize_base_url() -> str:
+    return os.environ.get("NOMBA_BASE_URL", "https://sandbox.nomba.com").rstrip("/")
+
+
+def _parse_expiry_timestamp(value: str | None) -> float:
+    if not value:
+        return 0
+
+    if isinstance(value, (int, float)):
+        return float(value)
+
+    if not isinstance(value, str):
+        return 0
+
     try:
-        response = requests.post(url, headers=headers, json=payload, timeout=10)
-        
-        if response.status_code != 200:
-            logger.error(f"Failed to issue token from Nomba sandbox: {response.text}")
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail="Authentication failed with the primary gateway provider."
-            )
-            
-        result = response.json()
-        if result.get('code') != '00':
-            raise Exception(f"Token generation rejected: {result.get('description')}")
-            
-        access_token = result["data"]["access_token"]
-        
-        # Access tokens expire after 30 minutes. 
-        # Caching for 25 minutes (1500 seconds) gives a safe 5-minute buffer before expiry.
-        _token_cache["access_token"] = access_token
-        _token_cache["expires_at"] = current_time + 1500
-        
-        return access_token
-        
-    except Exception as error:
-        logger.error(f"Outbound Nomba token route request failed: {str(error)}")
+        if value.endswith("Z"):
+            value = value[:-1] + "+00:00"
+        return datetime.fromisoformat(value).astimezone(timezone.utc).timestamp()
+    except ValueError:
+        return 0
+
+
+def _get_required_config() -> tuple[str, str, str]:
+    account_id = os.environ.get("NOMBA_ACCOUNT_ID")
+    client_id = os.environ.get("NOMBA_CLIENT_ID")
+    client_secret = os.environ.get("NOMBA_CLIENT_SECRET")
+
+    if not account_id or not client_id or not client_secret:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to execute connection sequence with checkout merchant layer."
+            detail="Nomba sandbox credentials are not configured.",
         )
+    return account_id, client_id, client_secret
 
 
-def make_nomba_request(method: str, endpoint: str, payload: dict = None) -> dict:
+def _store_token_response(result: dict, current_time: float) -> None:
+    data = result.get("data") or {}
+    access_token = data.get("access_token") or data.get("accessToken")
+    refresh_token = data.get("refresh_token") or data.get("refreshToken")
+
+    if not access_token:
+        raise ValueError("Nomba authentication response did not contain an access token.")
+
+    expires_at = _parse_expiry_timestamp(data.get("expiresAt"))
+    if not expires_at:
+        expires_at = current_time + 1500
+
+    _token_cache["access_token"] = access_token
+    _token_cache["refresh_token"] = refresh_token
+    _token_cache["expires_at"] = expires_at
+    _token_cache["business_id"] = data.get("businessId")
+
+
+def get_nomba_access_token(force_refresh: bool = False) -> str:
+    """
+    Retrieve a valid Nomba access token for the sandbox environment.
+    The token is cached and refreshed safely before expiry.
+    """
+    current_time = time.time()
+
+    if not force_refresh and _token_cache["access_token"] and _token_cache["expires_at"] > current_time + 30:
+        return _token_cache["access_token"]
+
+    account_id, client_id, client_secret = _get_required_config()
+    base_url = _normalize_base_url()
+    headers = {
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+        "accountId": account_id,
+    }
+
+    if not force_refresh and _token_cache["refresh_token"] and _token_cache["expires_at"] <= current_time:
+        logger.info("Nomba access token expired. Attempting token refresh.")
+        payload = {
+            "grant_type": "refresh_token",
+            "refresh_token": _token_cache["refresh_token"],
+        }
+        token_url = f"{base_url}/v1/auth/token/refresh"
+    else:
+        logger.info("Requesting a fresh Nomba access token from the sandbox.")
+        payload = {
+            "grant_type": "client_credentials",
+            "client_id": client_id,
+            "client_secret": client_secret,
+        }
+        token_url = f"{base_url}/v1/auth/token/issue"
+
+    try:
+        response = requests.post(token_url, headers=headers, json=payload, timeout=10)
+
+        if response.status_code != 200:
+            logger.error("Failed to issue Nomba access token: %s", response.text)
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="Authentication failed with the Nomba sandbox gateway.",
+            )
+
+        result = response.json()
+        if result.get("code") != "00":
+            description = result.get("description") or "Unknown authentication error"
+            raise ValueError(f"Token generation rejected: {description}")
+
+        _store_token_response(result, current_time)
+        return _token_cache["access_token"]
+
+    except HTTPException:
+        raise
+    except Exception as error:
+        logger.error("Outbound Nomba token request failed: %s", error)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Failed to execute the Nomba authentication sequence.",
+        ) from error
+
+
+def make_nomba_request(method: str, endpoint: str, payload: dict | None = None) -> dict:
     """
     Utility wrapper to execute authenticated HTTP operations against the Nomba sandbox backend.
-    Injects appropriate security headers and bearer tokens seamlessly on every invocation.
+    It injects the account header and bearer token for each call.
     """
     token = get_nomba_access_token()
-    url = f"{NOMBA_BASE_URL}{endpoint}"
-    
+    base_url = _normalize_base_url()
+    url = f"{base_url}/{endpoint.lstrip('/')}"
+
+    account_id, _, _ = _get_required_config()
     headers = {
-        "authorization": f"bearer {token}",
-        "accountid": NOMBA_ACCOUNT_ID,
-        "content-type": "application/json"
+        "Authorization": f"Bearer {token}",
+        "accountId": account_id,
+        "Content-Type": "application/json",
+        "Accept": "application/json",
     }
-    
+
     try:
-        if method.upper() == "GET":
+        method_name = method.upper()
+        if method_name == "GET":
             response = requests.get(url, headers=headers, timeout=10)
-        elif method.upper() == "POST":
+        elif method_name == "POST":
             response = requests.post(url, headers=headers, json=payload, timeout=10)
         else:
             raise ValueError(f"Unsupported HTTP method parameter structure: {method}")
-            
-        if response.status_code not in [200, 201]:
-            logger.error(f"Nomba API endpoint returned failure state [{response.status_code}]: {response.text}")
+
+        if response.status_code not in {200, 201}:
+            logger.error("Nomba API request failed [%s] for %s: %s", response.status_code, endpoint, response.text)
             raise HTTPException(
-                status_code=response.status_code,
-                detail=f"Nomba service communication layer error: {response.text}"
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=f"Nomba service communication layer error: {response.text}",
             )
-            
-        return response.json()
-        
+
+        result = response.json()
+        if isinstance(result, dict) and result.get("code") not in {None, "00", 0}:
+            description = result.get("description") or "Unknown Nomba API error"
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=f"Nomba API returned an error: {description}",
+            )
+
+        return result
+
+    except HTTPException:
+        raise
     except Exception as error:
-        logger.error(f"Outbound connection failure targeting endpoint {endpoint}: {str(error)}")
+        logger.error("Outbound connection failure targeting endpoint %s: %s", endpoint, error)
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="Payment engine connectivity matrix dropped. Try again."
+            detail="Payment engine connectivity matrix dropped. Try again.",
+        ) from error
+
+
+
+
+def create_virtual_account_for_school(sub_account_id: str | None, school_name: str) -> dict:
+    """
+    Create a persistent virtual account under the hackathon sub-account for a school.
+    This is the dedicated / persistent flavour: one account per customer/school, reused forever.
+    """
+    resolved_subaccount_id = sub_account_id or _get_hackathon_subaccount_id()
+    if not resolved_subaccount_id:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Nomba hackathon sub-account is not configured.",
         )
 
-# -- TO FIX --
-def create_virtual_account_for_school(sub_account_id: str, school_name: str) -> dict:
-    """
-    Creates a permanent, static virtual account number (NUBAN) for a specific school sub-account.
-    All funds paid into this virtual account will be collected in the designated sub-account.
-    """
-    
-    endpoint = f"v1/accounts/virtual/{sub_account_id}"
-    
-    # Generate a unique account reference for this virtual account (Must be 16-64 characters)
-    # Using timestamp and safe truncation to ensure uniqueness and compliance
-    clean_name = school_name.lower().replace(" ", "")[:10]
-    account_ref = f"va_{clean_name}_{int(time.time())}"
-    
+    endpoint = f"v1/accounts/virtual/{resolved_subaccount_id}"
+
+    safe_name = (school_name or "School").strip()
+    account_ref = f"va_{safe_name.lower().replace(' ', '_')[:20]}_{int(time.time())}"
+    if len(account_ref) < 16:
+        account_ref = f"{account_ref}_{int(time.time())}".replace("__", "_")
+
     payload = {
-        "accountRef": account_ref,
-        "accountName": f"{school_name} - Collection",
-        "currency": "NGN"
-        # Omit expiryDate and expectedAmount so it acts as a permanent Static Virtual Account
+        "accountRef": account_ref[:64],
+        "accountName": safe_name,
     }
-    
-    logger.info(f"Requesting static virtual account for sub-account: {sub_account_id}")
-    
-    # Execute the authenticated HTTP POST operation
+
+    logger.info("Requesting persistent virtual account for sub-account %s for school %s", resolved_subaccount_id, safe_name)
+
     result = make_nomba_request(method="POST", endpoint=endpoint, payload=payload)
-    
-    if result.get('code') != '00':
-        logger.error(f"Nomba Virtual Account creation failed: {result.get('description')}")
+
+    if isinstance(result, dict) and result.get("code") not in {None, "00", 0}:
+        description = result.get("description") or "Unknown virtual account error"
+        logger.error("Nomba virtual account creation failed: %s", description)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Failed to create school virtual bank account: {result.get('description')}"
+            detail=f"Failed to create school virtual bank account: {description}",
         )
-        
-    return result['data']
+
+    if not isinstance(result, dict):
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Unexpected response from Nomba while creating the virtual account.",
+        )
+
+    return result.get("data") or result
 
 
-# GOTTA FIX LATER
-def create_checkout_order(amount_kobo: int, order_ref: str, school_subaccount_id: str = None, customer_email: str = None) -> str:
+
+# ---- NEXT TO FIX ---
+def create_checkout_order(amount_kobo: int, order_ref: str, school_subaccount_id: str | None = None, customer_email: str | None = None) -> str:
     """
     POSTs an online checkout order session request to Nomba.
     

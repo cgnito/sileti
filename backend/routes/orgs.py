@@ -1,3 +1,5 @@
+# -- I NEED TO COME BACK TO CLEAN UP -- TOO MANY TRIAL AND ERROR ROUTINES, NEED TO REFACTOR AND CLEAN UP THE LOGIC FLOW
+# -- ESPECIALLY RELATING TO NOMBAS API INTEGRATION AND ACCOUNT LOOKUP ROUTINES
 from uuid import UUID
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
@@ -15,6 +17,98 @@ from database import get_db
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/orgs", tags=["Organizations"])
+
+
+def _normalize_nomba_bank_list(response_data: dict) -> list[dict[str, str]]:
+    """Normalize Nomba bank-list responses into the shape expected by the frontend."""
+    data = response_data.get("data") or {}
+    raw_banks: list[dict] = []
+
+    if isinstance(data, dict):
+        raw_banks = data.get("results") or []
+    elif isinstance(data, list):
+        raw_banks = data
+
+    if not raw_banks and isinstance(response_data.get("results"), list):
+        raw_banks = response_data.get("results", [])
+
+    mapped_banks: list[dict[str, str]] = []
+    for item in raw_banks:
+        if not isinstance(item, dict):
+            continue
+        bank_code = item.get("code") or item.get("bankCode")
+        bank_name = item.get("name") or item.get("bankName")
+        if bank_code and bank_name:
+            mapped_banks.append({
+                "bank_name": str(bank_name),
+                "bank_code": str(bank_code),
+            })
+
+    return mapped_banks
+
+
+def _extract_lookup_account_name(response_data: dict, fallback: str = "unknown matching account") -> str:
+    """Extract the resolved account name from a Nomba lookup response."""
+    def _pick(values: list[dict | str | None]) -> str | None:
+        for item in values:
+            if not item:
+                continue
+            if isinstance(item, dict):
+                for key in (
+                    "accountName",
+                    "account_name",
+                    "name",
+                    "customerName",
+                    "beneficiaryName",
+                    "accountHolderName",
+                    "account_name_response",
+                    "resolvedAccountName",
+                    "recipientName",
+                    "bankAccountName",
+                ):
+                    value = item.get(key)
+                    if isinstance(value, str) and value.strip():
+                        return value.strip()
+                for nested_key in ("data", "result", "details", "response", "account", "payload"):
+                    nested_value = item.get(nested_key)
+                    if isinstance(nested_value, dict):
+                        nested_found = _pick([nested_value])
+                        if nested_found:
+                            return nested_found
+            elif isinstance(item, str) and item.strip():
+                return item.strip()
+        return None
+
+    data = response_data.get("data") or {}
+    if isinstance(data, dict):
+        for candidate in (
+            data,
+            data.get("result") or {},
+            data.get("details") or {},
+            data.get("response") or {},
+            data.get("account") or {},
+            data.get("payload") or {},
+        ):
+            if isinstance(candidate, dict):
+                found = _pick([candidate])
+                if found:
+                    return found
+
+    for candidate in (
+        response_data,
+        response_data.get("result") or {},
+        response_data.get("details") or {},
+        response_data.get("response") or {},
+        response_data.get("account") or {},
+        response_data.get("payload") or {},
+    ):
+        if isinstance(candidate, dict):
+            found = _pick([candidate])
+            if found:
+                return found
+
+    return fallback
+
 
 def send_verification_email_task(email: str, token: str):
     # background wrapper for non-blocking email deployment
@@ -294,15 +388,8 @@ def get_supported_banks(
     proxies supported banks list directly from the nomba api to populate frontend dropdown grids.
     """
     try:
-        # trigger outbound live proxy query against nomba's sandbox transfers bank list route
-        response_data = payments.make_nomba_request(method="GET", endpoint="v2/transfers/banks")
-        
-        # parse incoming response array and map parameters to match frontend key properties
-        raw_banks = response_data.get("data", {}).get("results", [])
-        mapped_banks = [
-            {"bank_name": item["name"], "bank_code": item["code"]} for item in raw_banks
-        ]
-        return mapped_banks
+        response_data = payments.make_nomba_request(method="GET", endpoint="v1/transfers/banks")
+        return _normalize_nomba_bank_list(response_data)
     except Exception as e:
         logger.error(f"failed to retrieve banks list from nomba provider: {str(e)}")
         raise HTTPException(
@@ -328,19 +415,16 @@ def verify_bank_account_name(
             "bankCode": lookup_input.bank_code
         }
         
-        # fire standard post request targeting sandbox lookup validation channel
         response_data = payments.make_nomba_request(
-            method="POST", 
-            endpoint="v2/transfers/bank/lookup", 
+            method="POST",
+            endpoint="v1/transfers/bank/lookup",
             payload=payload
         )
-        
-        resolved_data = response_data.get("data", {})
-        
+
         return {
             "account_number": lookup_input.account_number,
-            "account_name": resolved_data.get("accountName", "unknown matching account"),
-            "bank_code": lookup_input.bank_code
+            "account_name": _extract_lookup_account_name(response_data),
+            "bank_code": lookup_input.bank_code,
         }
     except Exception as e:
         logger.error(f"nomba account verification routine failed: {str(e)}")
@@ -367,10 +451,87 @@ def get_bank_settlement(
     return settlement
 
 
-# submit bank settlement details for the current school organization and create a nomba va under the sub account
-# i'll need to update the models for va account name and reference, might need to update schemas too
+@router.post("/bank-settlement", response_model=schemas.BankSettlementResponse)
+def submit_bank_settlement(
+    bank_input: schemas.BankSettlementCreate,
+    current_admin: security.AuthContext = Depends(security.allow_admin_only),
+    db: Session = Depends(get_db)
+):
+    """
+    Submit the bank settlement details for the current school, create a persistent
+    Nomba virtual account under the hackathon sub-account, and persist the result.
+    """
+    org = current_admin.organization
+    if not org:
+        org = db.query(models.Organization).filter(models.Organization.id == current_admin.org_id).first()
+    if not org:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="organization record missing")
 
+    settlement = db.query(models.BankSettlement).filter(models.BankSettlement.org_id == org.id).first()
+    if not settlement:
+        settlement = models.BankSettlement(org_id=org.id)
+        db.add(settlement)
 
+    try:
+        virtual_account = payments.create_virtual_account_for_school(
+            sub_account_id=None,
+            school_name=org.school_name,
+        )
+    except HTTPException:
+        raise
+    except Exception as error:
+        logger.error("failed to create virtual account for school %s: %s", org.school_name, error)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="could not create the school virtual account at this time."
+        ) from error
+
+    def _pick_value(payload: dict | None, *keys: str) -> str | None:
+        if not isinstance(payload, dict):
+            return None
+        for key in keys:
+            value = payload.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+        return None
+
+    settlement.bank_name = bank_input.bank_name
+    settlement.bank_code = bank_input.bank_code
+    settlement.account_number = bank_input.account_number
+    settlement.account_name = bank_input.account_name
+    settlement.nomba_virtual_account_ref = _pick_value(
+        virtual_account,
+        "accountRef",
+        "virtualAccountRef",
+        "accountReference",
+        "reference",
+        "virtualAccountReference",
+    )
+    settlement.nomba_virtual_account_number = _pick_value(
+        virtual_account,
+        "bankAccountNumber",
+        "accountNumber",
+        "virtualAccountNumber",
+        "generatedAccountNumber",
+    )
+    settlement.nomba_virtual_account_name = _pick_value(
+        virtual_account,
+        "accountName",
+        "virtualAccountName",
+        "holderName",
+    )
+    settlement.nomba_virtual_account_bank_name = _pick_value(
+        virtual_account,
+        "bankName",
+        "virtualAccountBankName",
+        "bank",
+    )
+
+    org.has_setup_bank = True
+
+    db.commit()
+    db.refresh(settlement)
+    return settlement
 
 
 # update existing bank settlement details for the current school organization and synchronize with nomba
@@ -414,13 +575,11 @@ def update_bank_settlement(
             }
             # hit nomba API sandbox to run verification check routine
             response_data = payments.make_nomba_request(
-                method="POST", 
-                endpoint="v2/transfers/bank/lookup", 
-                payload=payload
+                method="POST",
+                endpoint="v1/transfers/bank/lookup",
+                payload=payload,
             )
-            resolved_data = response_data.get("data", {})
-            # automatically override the name to ensure compliance with central switch lookup
-            update_data["account_name"] = resolved_data.get("accountName", settlement.account_name)
+            update_data["account_name"] = _extract_lookup_account_name(response_data, settlement.account_name)
         except Exception as e:
             logger.error(f"failed to validate updated account configurations with nomba: {str(e)}")
             raise HTTPException(

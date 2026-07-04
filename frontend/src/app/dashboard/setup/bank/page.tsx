@@ -192,7 +192,7 @@ export default function BankSetupPage() {
               placeholder="Start typing a bank name"
               className="w-full rounded-lg border border-border bg-white px-3 py-2.5 text-sm text-on-surface outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/20"
             />
-            {search && filteredBanks.length > 0 ? (
+            {filteredBanks.length > 0 ? (
               <select
                 className="w-full rounded-lg border border-border bg-white px-3 py-2.5 text-sm text-on-surface outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/20"
                 value={selectedBankCode}

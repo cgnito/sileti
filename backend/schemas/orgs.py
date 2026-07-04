@@ -93,7 +93,10 @@ class BankSettlementCreate(BaseModel):
 class BankSettlementResponse(BankSettlementCreate):
     id: UUID
     org_id: UUID
-    nomba_subaccount_id: Optional[str] = None
+    nomba_virtual_account_ref: Optional[str] = None
+    nomba_virtual_account_number: Optional[str] = None
+    nomba_virtual_account_name: Optional[str] = None
+    nomba_virtual_account_bank_name: Optional[str] = None
 
     class Config:
         from_attributes = True

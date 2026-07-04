@@ -60,8 +60,10 @@ class BankSettlement(Base):
     account_number = Column(String(20), nullable=False)
     account_name = Column(String(255), nullable=False)
     
-    # stores unique sub-account mapping created on your nomba integration dashboard
-    nomba_subaccount_id = Column(String(100), nullable=True)
+    nomba_virtual_account_ref = Column(String(255), nullable=True)
+    nomba_virtual_account_number = Column(String(50), nullable=True)
+    nomba_virtual_account_name = Column(String(255), nullable=True)
+    nomba_virtual_account_bank_name = Column(String(255), nullable=True)
     
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
