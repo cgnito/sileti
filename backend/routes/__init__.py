@@ -6,7 +6,8 @@ from .billing import router as billing_router
 from .classes import router as classes_router
 from .students import router as students_router
 from .webhooks import router as webhooks_router
-from .whatsapp import router as whatsapp_router
+# Legacy inbound WhatsApp assistant kept out of the active router on purpose.
+# from .whatsapp import router as whatsapp_router
 # from .payments import router as payments_router
 
 __all__ = [
@@ -18,5 +19,4 @@ __all__ = [
     "classes_router",
     "students_router",
     "webhooks_router",
-    "whatsapp_router"
 ]

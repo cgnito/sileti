@@ -88,15 +88,7 @@ class NombaAuthTests(unittest.TestCase):
         self.assertEqual(result["account_name"], "Ada Lovelace")
         self.assertEqual(mock_make_request.call_args.kwargs["endpoint"], "v1/transfers/bank/lookup")
 
-    @patch("routes.orgs.payments.create_virtual_account_for_school")
-    def test_submit_bank_settlement_creates_virtual_account_and_saves_record(self, mock_create_va):
-        mock_create_va.return_value = {
-            "accountRef": "va-greenwood-123",
-            "bankAccountNumber": "1234567890",
-            "accountName": "Greenwood Academy",
-            "bankName": "Nomba MFB",
-        }
-
+    def test_submit_bank_settlement_saves_record_without_virtual_account_fields(self):
         engine = create_engine("sqlite:///:memory:")
         models.Base.metadata.create_all(engine)
         session_factory = sessionmaker(bind=engine)
@@ -129,28 +121,28 @@ class NombaAuthTests(unittest.TestCase):
         result = orgs.submit_bank_settlement(bank_input=payload, current_admin=current_admin, db=db)
 
         self.assertEqual(result.bank_name, "Nomba Bank")
-        self.assertEqual(result.nomba_virtual_account_ref, "va-greenwood-123")
         self.assertTrue(org.has_setup_bank)
-        self.assertEqual(mock_create_va.call_count, 1)
+        self.assertFalse(hasattr(result, "nomba_virtual_account_ref"))
 
         saved = db.query(models.BankSettlement).filter(models.BankSettlement.org_id == org.id).first()
         self.assertIsNotNone(saved)
-        self.assertEqual(saved.nomba_virtual_account_number, "1234567890")
+        self.assertEqual(saved.bank_name, "Nomba Bank")
 
     @patch("routes.payments.make_nomba_request")
-    def test_create_virtual_account_for_school_uses_hackathon_sub_account(self, mock_make_request):
-        mock_make_request.return_value = {"code": "00", "data": {"bankAccountNumber": "1234567890"}}
-        os.environ["NOMBA_HACKATHON_SUBACCOUNT"] = "sub-account-123"
+    def test_create_checkout_order_uses_frontend_callback_url(self, mock_make_request):
+        mock_make_request.return_value = {"code": "00", "data": {"checkoutLink": "https://checkout.nomba/link"}}
 
-        result = payments.create_virtual_account_for_school(None, "Greenwood Academy")
+        with patch.object(payments, "FRONTEND_URL", "https://frontend.example.com"):
+            result = payments.create_checkout_order(
+                amount_kobo=150000,
+                order_ref="SIL-ORDER-123",
+                school_subaccount_id="sub-account-123",
+                customer_email="parent@example.com",
+            )
 
-        self.assertEqual(result["bankAccountNumber"], "1234567890")
-        self.assertEqual(mock_make_request.call_args.kwargs["endpoint"], "v1/accounts/virtual/sub-account-123")
+        self.assertEqual(result, "https://checkout.nomba/link")
         payload = mock_make_request.call_args.kwargs["payload"]
-        self.assertEqual(payload["accountName"], "Greenwood Academy")
-        self.assertNotIn("currency", payload)
-        self.assertNotIn("expiryDate", payload)
-        self.assertNotIn("expectedAmount", payload)
+        self.assertEqual(payload["order"]["callbackUrl"], "https://frontend.example.com/payment-success")
 
 
 if __name__ == "__main__":

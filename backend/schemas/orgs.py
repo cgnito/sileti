@@ -1,4 +1,6 @@
 from typing import Optional
+from datetime import datetime
+from decimal import Decimal
 from pydantic import BaseModel, EmailStr, Field, field_validator
 from uuid import UUID
 import utils
@@ -93,10 +95,6 @@ class BankSettlementCreate(BaseModel):
 class BankSettlementResponse(BankSettlementCreate):
     id: UUID
     org_id: UUID
-    nomba_virtual_account_ref: Optional[str] = None
-    nomba_virtual_account_number: Optional[str] = None
-    nomba_virtual_account_name: Optional[str] = None
-    nomba_virtual_account_bank_name: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -183,3 +181,50 @@ class DashboardMetricsResponse(BaseModel):
     summary: DashboardSummary
     invoice_breakdown: list[DashboardBreakdownPoint]
     revenue_trend: list[DashboardTrendPoint]
+
+
+class NotificationInvoiceSummary(BaseModel):
+    id: UUID
+    session: str
+    term: str
+    total_amount: Decimal
+    paid_amount: Decimal
+    status: str
+
+    class Config:
+        from_attributes = True
+
+
+class NotificationStudentSummary(BaseModel):
+    id: UUID
+    first_name: str
+    last_name: str
+    silete_id: str
+    class_id: Optional[UUID] = None
+    class_name: Optional[str] = None
+
+
+class NotificationLogResponse(BaseModel):
+    id: UUID
+    idempotency_key: str
+    org_id: UUID
+    student_id: Optional[UUID] = None
+    invoice_id: Optional[UUID] = None
+    channel: str
+    event_type: str
+    recipient_phone: str
+    message_sid: Optional[str] = None
+    status: str
+    error_message: Optional[str] = None
+    created_at: datetime
+    student_name: Optional[str] = None
+    class_name: Optional[str] = None
+    invoice: Optional[NotificationInvoiceSummary] = None
+
+
+class NotificationLogListResponse(BaseModel):
+    items: list[NotificationLogResponse]
+    total: int
+    limit: int
+    offset: int
+    summary: dict[str, int]

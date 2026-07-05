@@ -12,7 +12,9 @@ from .orgs import (
     DashboardTrendPoint,
     DashboardBreakdownPoint,
     DashboardSummary,
-    DashboardMetricsResponse
+    DashboardMetricsResponse,
+    NotificationLogResponse,
+    NotificationLogListResponse
 )
 from .users import (
     UserCreate, 
@@ -57,6 +59,8 @@ __all__ = [
     "DashboardBreakdownPoint",
     "DashboardSummary",
     "DashboardMetricsResponse",
+    "NotificationLogResponse",
+    "NotificationLogListResponse",
     "UserCreate",
     "UserResponse",
     "LoginRequest",      

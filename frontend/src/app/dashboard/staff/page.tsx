@@ -6,6 +6,7 @@ import { AlertCircle, Loader2, MailPlus, PencilLine, RotateCcw, Trash2 } from "l
 import { Button } from "@/src/components/shared/Button";
 import { useStaffList, useStaffMutations } from "@/src/features/dashboard/staff/hooks/staff.hooks";
 import { DashboardEmptyState, DashboardHero, DashboardPageShell, DashboardPanel } from "@/src/components/dashboard/PageChrome";
+import { RequireRole } from "@/src/components/auth/RequireRole";
 
 function StaffListContent() {
   const router = useRouter();
@@ -48,6 +49,7 @@ function StaffListContent() {
   }
 
   return (
+    <RequireRole>
     <DashboardPageShell>
       <DashboardHero
         eyebrow="Staff management"
@@ -156,6 +158,7 @@ function StaffListContent() {
         )}
       </DashboardPanel>
     </DashboardPageShell>
+    </RequireRole>
   );
 }
 

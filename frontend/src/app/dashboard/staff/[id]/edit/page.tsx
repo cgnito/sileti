@@ -6,6 +6,7 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { AlertCircle, Loader2 } from "lucide-react";
 import { Button } from "@/src/components/shared/Button";
 import { useStaffMutations } from "@/src/features/dashboard/staff/hooks/staff.hooks";
+import { RequireRole } from "@/src/components/auth/RequireRole";
 import { DashboardHero, DashboardPageShell, DashboardPanel } from "@/src/components/dashboard/PageChrome";
 
 export default function EditStaffPage() {
@@ -33,6 +34,7 @@ export default function EditStaffPage() {
   }
 
   return (
+    <RequireRole>
     <DashboardPageShell className="max-w-3xl">
       <DashboardHero
         eyebrow="Staff management"
@@ -81,5 +83,6 @@ export default function EditStaffPage() {
         </form>
       </DashboardPanel>
     </DashboardPageShell>
+    </RequireRole>
   );
 }

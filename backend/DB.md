@@ -172,6 +172,28 @@ This document defines the relational database schema for **ṣilẹti**. The sys
 | `channel` | VARCHAR(50) | Method (e.g., "transfer", "card"). |
 | `created_at` | TIMESTAMPTZ | Automatic payment timestamp. |
 
+### Table: `payment_ledger_entries`
+**Description:** Gateway-backed payment history table that records webhook events for checkout payments.  
+**Relationships:** - Belongs to an `Organization`.
+- Optionally linked to an `Invoice`.
+
+| Column | Data Type | Description |
+| :--- | :--- | :--- |
+| `request_id` | VARCHAR(100) (PK) | Nomba webhook request id used for dedupe. |
+| `org_id` | UUID (FK, nullable) | School owner for the event when it can be resolved. |
+| `invoice_id` | UUID (FK, nullable) | Linked invoice for checkout-based school fee payments. |
+| `payment_flow` | VARCHAR(30) | Checkout payment flow label. |
+| `event_type` | VARCHAR(50) | Nomba event type, such as `payment_success`. |
+| `gateway_reference` | VARCHAR(120) | Local reconciliation reference such as `orderReference`. |
+| `transaction_id` | VARCHAR(120) | Nomba transaction id from the webhook. |
+| `amount` | NUMERIC(12,2) | Amount reported by Nomba or the local invoice amount. |
+| `status` | VARCHAR(20) | Normalized event status: `SUCCESS`, `FAILED`, `REVERSED`, or `IGNORED`. |
+| `payment_method` | VARCHAR(50) | Method reported by the gateway when available. |
+| `customer_name` | VARCHAR(255) | Sender/customer label captured from the webhook. |
+| `raw_payload` | JSON | Full webhook payload for audit/debugging. |
+| `created_at` | TIMESTAMPTZ | Ledger entry creation timestamp. |
+| `updated_at` | TIMESTAMPTZ | Last update timestamp. |
+
 ---
 
 ## Data Integrity Rules
@@ -179,5 +201,3 @@ This document defines the relational database schema for **ṣilẹti**. The sys
 2. **Immutability:** Once a `transaction` is recorded, the row cannot be edited or deleted.
 3. **Financial Precision:** All currency values use `NUMERIC(12,2)` to prevent floating-point errors.
 4. **Soft Deletes:** Key entities use a `deleted_at` column to maintain audit trails while hiding records from UI.
-
-

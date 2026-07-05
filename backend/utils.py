@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 resend.api_key = os.getenv("RESEND_API_KEY")
+FRONTEND_URL = os.getenv("FRONTEND_URL", "http://127.0.0.1:3000").rstrip("/")
 
 def sanitize_text(text: str) -> str:
     if not text: 
@@ -24,6 +25,35 @@ def sanitize_email(email: str) -> str:
         return email
     return email.strip().lower()
 
+
+def normalize_phone_number(phone: str | None) -> str | None:
+    """
+    Normalizes a local or international phone number into a Twilio-friendly E.164 string.
+    """
+    if not phone:
+        return None
+
+    cleaned = phone.strip().replace("whatsapp:", "")
+    cleaned = re.sub(r"[\s\-\(\)]", "", cleaned)
+    if not cleaned:
+        return None
+
+    if cleaned.startswith("+"):
+        digits = re.sub(r"\D", "", cleaned[1:])
+        return f"+{digits}" if digits else None
+
+    digits = re.sub(r"\D", "", cleaned)
+    if not digits:
+        return None
+
+    if digits.startswith("0") and len(digits) == 11:
+        return f"+234{digits[1:]}"
+
+    if digits.startswith("234") and len(digits) >= 13:
+        return f"+{digits}"
+
+    return f"+{digits}"
+
 def generate_short_code(name: str) -> str:
     # structural blueprint for generating short code acronym fallback sequences
     words = re.sub(r'[^a-zA-Z\s]', '', name).split()
@@ -39,7 +69,7 @@ def generate_short_code(name: str) -> str:
 
 def send_verification_email(email: str, token: str):
     # verification onboarding pipeline email sequence
-    verify_link = f"http://127.0.0.1:8000/auth/verify?token={token}"
+    verify_link = f"{FRONTEND_URL}/verify-email?token={token}"
     try:
         resend.Emails.send({
             "from": "ṣilẹti App <onboarding@resend.dev>",
@@ -59,7 +89,7 @@ def send_verification_email(email: str, token: str):
 
 def send_staff_invitation_email(email: str, token: str, admin_name: str, org_name: str):
     # set-password link strategy for delegated staff workflows
-    invite_link = f"http://127.0.0.1:8000/users/set-password?token={token}"
+    invite_link = f"{FRONTEND_URL}/set-password?token={token}"
     try:
         resend.Emails.send({
             "from": "ṣilẹti App <onboarding@resend.dev>",

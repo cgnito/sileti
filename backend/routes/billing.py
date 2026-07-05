@@ -2,12 +2,13 @@ from decimal import Decimal
 from datetime import date
 from typing import Optional
 from uuid import UUID
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from sqlalchemy.orm import Session, selectinload, joinedload
 
 import models
 import schemas
 import security
+from services import notifications
 from database import get_db
 
 router = APIRouter(prefix="/billing", tags=["Billing Engine"])
@@ -49,6 +50,7 @@ def sync_invoice_status(invoice: models.Invoice) -> None:
 @router.post("/generate", status_code=status.HTTP_201_CREATED)
 def generate_invoices(
     request: schemas.InvoiceGenerationRequest,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: security.AuthContext = Depends(security.RoleChecker(["admin", "staff"]))
 ):
@@ -105,6 +107,7 @@ def generate_invoices(
     }
 
     invoices_created = 0
+    created_invoice_ids: list[UUID] = []
 
     # Build student invoice statements atomically
     for student in active_students:
@@ -135,8 +138,11 @@ def generate_invoices(
         invoice.items = details_to_add
         db.add(invoice)
         invoices_created += 1
+        created_invoice_ids.append(invoice.id)
 
     db.commit()
+    if created_invoice_ids:
+        background_tasks.add_task(notifications.notify_invoices_created, created_invoice_ids)
     return {
         "message": f"Successfully generated {invoices_created} invoices for the class.",
         "count": invoices_created
