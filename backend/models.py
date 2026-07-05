@@ -230,6 +230,7 @@ class TransactionStatus(str, enum.Enum):
     PENDING = "PENDING"
     SUCCESS = "SUCCESS"
     FAILED = "FAILED"
+    REVERSED = "REVERSED"
 
 class Transaction(Base):
     __tablename__ = "transactions"

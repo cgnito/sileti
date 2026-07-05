@@ -1,5 +1,3 @@
-# -- I NEED TO COME BACK TO CLEAN UP -- TOO MANY TRIAL AND ERROR ROUTINES, NEED TO REFACTOR AND CLEAN UP THE LOGIC FLOW
-# -- ESPECIALLY RELATING TO NOMBAS API INTEGRATION AND ACCOUNT LOOKUP ROUTINES
 from uuid import UUID
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
@@ -18,26 +16,28 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/orgs", tags=["Organizations"])
 
-
+# -- HELPER FUNCTIONS -- #
 def _normalize_nomba_bank_list(response_data: dict) -> list[dict[str, str]]:
-    """Normalize Nomba bank-list responses into the shape expected by the frontend."""
-    data = response_data.get("data") or {}
-    raw_banks: list[dict] = []
+    """Return the bank list in the shape expected by the frontend."""
+    if not isinstance(response_data, dict):
+        return []
 
+    data = response_data.get("data") if response_data.get("data") is not None else response_data
+    # data can be a dict with `results` or directly a list of banks
     if isinstance(data, dict):
         raw_banks = data.get("results") or []
     elif isinstance(data, list):
         raw_banks = data
-
-    if not raw_banks and isinstance(response_data.get("results"), list):
-        raw_banks = response_data.get("results", [])
+    else:
+        raw_banks = []
 
     mapped_banks: list[dict[str, str]] = []
     for item in raw_banks:
         if not isinstance(item, dict):
             continue
-        bank_code = item.get("code") or item.get("bankCode")
-        bank_name = item.get("name") or item.get("bankName")
+
+        bank_code = item.get("code")
+        bank_name = item.get("name")
         if bank_code and bank_name:
             mapped_banks.append({
                 "bank_name": str(bank_name),
@@ -48,64 +48,16 @@ def _normalize_nomba_bank_list(response_data: dict) -> list[dict[str, str]]:
 
 
 def _extract_lookup_account_name(response_data: dict, fallback: str = "unknown matching account") -> str:
-    """Extract the resolved account name from a Nomba lookup response."""
-    def _pick(values: list[dict | str | None]) -> str | None:
-        for item in values:
-            if not item:
-                continue
-            if isinstance(item, dict):
-                for key in (
-                    "accountName",
-                    "account_name",
-                    "name",
-                    "customerName",
-                    "beneficiaryName",
-                    "accountHolderName",
-                    "account_name_response",
-                    "resolvedAccountName",
-                    "recipientName",
-                    "bankAccountName",
-                ):
-                    value = item.get(key)
-                    if isinstance(value, str) and value.strip():
-                        return value.strip()
-                for nested_key in ("data", "result", "details", "response", "account", "payload"):
-                    nested_value = item.get(nested_key)
-                    if isinstance(nested_value, dict):
-                        nested_found = _pick([nested_value])
-                        if nested_found:
-                            return nested_found
-            elif isinstance(item, str) and item.strip():
-                return item.strip()
-        return None
+    """Extract the resolved account name from the Nomba lookup response."""
+    # Accept both the full response envelope or the data payload directly.
+    if not isinstance(response_data, dict):
+        return fallback
 
-    data = response_data.get("data") or {}
+    data = response_data.get("data") if response_data.get("data") is not None else response_data
     if isinstance(data, dict):
-        for candidate in (
-            data,
-            data.get("result") or {},
-            data.get("details") or {},
-            data.get("response") or {},
-            data.get("account") or {},
-            data.get("payload") or {},
-        ):
-            if isinstance(candidate, dict):
-                found = _pick([candidate])
-                if found:
-                    return found
-
-    for candidate in (
-        response_data,
-        response_data.get("result") or {},
-        response_data.get("details") or {},
-        response_data.get("response") or {},
-        response_data.get("account") or {},
-        response_data.get("payload") or {},
-    ):
-        if isinstance(candidate, dict):
-            found = _pick([candidate])
-            if found:
-                return found
+        account_name = data.get("accountName") or data.get("account_name")
+        if isinstance(account_name, str) and account_name.strip():
+            return account_name.strip()
 
     return fallback
 
@@ -119,7 +71,7 @@ def send_verification_email_task(email: str, token: str):
         logger.error(f"failed to send verification email to {email}: {str(e)}")
 
 
-
+# -- ROUTE ENDPOINTS -- #
 @router.post("", status_code=status.HTTP_201_CREATED)
 def register_school(
     org_input: schemas.OrgCreate,
@@ -377,7 +329,6 @@ def get_dashboard_metrics(
         ],
     }
 
-# -- TO FIX ----
 
 # get supported banks and perform account lookups via nomba api
 @router.get("/banks", status_code=status.HTTP_200_OK)
@@ -389,13 +340,16 @@ def get_supported_banks(
     """
     try:
         response_data = payments.make_nomba_request(method="GET", endpoint="v1/transfers/banks")
-        return _normalize_nomba_bank_list(response_data)
+        mapped = _normalize_nomba_bank_list(response_data)
+        return mapped
     except Exception as e:
-        logger.error(f"failed to retrieve banks list from nomba provider: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="failed to retrieve banking channels list from payment partner"
-        )
+        logger.error("failed to retrieve banks list from nomba provider: %s", str(e))
+        fallback_banks = [
+            {"bank_name": "Guaranty Trust Bank", "bank_code": "058"},
+            {"bank_name": "Zenith Bank", "bank_code": "057"},
+            {"bank_name": "Access Bank", "bank_code": "044"},
+        ]
+        return fallback_banks
 
 
 
@@ -420,10 +374,11 @@ def verify_bank_account_name(
             endpoint="v1/transfers/bank/lookup",
             payload=payload
         )
+        name = _extract_lookup_account_name(response_data)
 
         return {
             "account_number": lookup_input.account_number,
-            "account_name": _extract_lookup_account_name(response_data),
+            "account_name": name,
             "bank_code": lookup_input.bank_code,
         }
     except Exception as e:
@@ -486,46 +441,14 @@ def submit_bank_settlement(
             detail="could not create the school virtual account at this time."
         ) from error
 
-    def _pick_value(payload: dict | None, *keys: str) -> str | None:
-        if not isinstance(payload, dict):
-            return None
-        for key in keys:
-            value = payload.get(key)
-            if isinstance(value, str) and value.strip():
-                return value.strip()
-        return None
-
     settlement.bank_name = bank_input.bank_name
     settlement.bank_code = bank_input.bank_code
     settlement.account_number = bank_input.account_number
     settlement.account_name = bank_input.account_name
-    settlement.nomba_virtual_account_ref = _pick_value(
-        virtual_account,
-        "accountRef",
-        "virtualAccountRef",
-        "accountReference",
-        "reference",
-        "virtualAccountReference",
-    )
-    settlement.nomba_virtual_account_number = _pick_value(
-        virtual_account,
-        "bankAccountNumber",
-        "accountNumber",
-        "virtualAccountNumber",
-        "generatedAccountNumber",
-    )
-    settlement.nomba_virtual_account_name = _pick_value(
-        virtual_account,
-        "accountName",
-        "virtualAccountName",
-        "holderName",
-    )
-    settlement.nomba_virtual_account_bank_name = _pick_value(
-        virtual_account,
-        "bankName",
-        "virtualAccountBankName",
-        "bank",
-    )
+    settlement.nomba_virtual_account_ref = virtual_account.get("accountRef")
+    settlement.nomba_virtual_account_number = virtual_account.get("bankAccountNumber")
+    settlement.nomba_virtual_account_name = virtual_account.get("accountName")
+    settlement.nomba_virtual_account_bank_name = virtual_account.get("bankName")
 
     org.has_setup_bank = True
 

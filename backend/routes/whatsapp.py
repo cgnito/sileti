@@ -70,6 +70,8 @@ async def whatsapp_assistant_webhook(
     parent_phone = From.replace("whatsapp:", "").strip()
     logger.info(f"incoming webhook raw phone number string: {parent_phone}")
 
+
+    # tool 1: verify_student_by_id
     def verify_student_by_id(student_id: str) -> dict:
         normalized_id = student_id.replace("-", "/").strip()
         student = db.query(models.Student).filter(models.Student.silete_id == normalized_id).first()
@@ -84,7 +86,8 @@ async def whatsapp_assistant_webhook(
             "student_uuid": str(student.id)
         }
 
-    
+
+    # tool 2: link_parent_to_student
     def link_parent_to_student(student_id: str) -> dict:
         normalized_id = student_id.replace("-", "/").strip()
         student = db.query(models.Student).filter(models.Student.silete_id == normalized_id).first()
@@ -108,23 +111,62 @@ async def whatsapp_assistant_webhook(
         db.commit()
         return {"success": True, "student_name": f"{student.first_name} {student.last_name}", "total_due": total_due, "term_info": term_info}
 
+
+
+    # tool 3: generate_payment_link and initialize a Transaction record in the database
     def generate_payment_link(student_id: str, amount_to_pay: float) -> dict:
         normalized_id = student_id.replace("-", "/").strip()
+        
+        # fetch the Student
         student = db.query(models.Student).filter(models.Student.silete_id == normalized_id).first()
         if not student:
             return {"error": "Student record missing during payment initialization."}
-        settlement = db.query(models.BankSettlement).filter(models.BankSettlement.org_id == student.org_id).first()
+            
+        # find the Student's Outstanding Invoice (Unpaid or Partially Paid)
+        invoice = db.query(models.Invoice).filter(
+            models.Invoice.student_id == student.id,
+            models.Invoice.status != models.InvoiceStatus.PAID
+        ).first()
+        
+        if not invoice:
+            return {"error": "No outstanding invoice found for this student."}
+
         subaccount_id = payments._get_hackathon_subaccount_id()
         order_ref = f"SIL-{uuid.uuid4().hex[:12].upper()}"
         amount_kobo = int(amount_to_pay * 100)
+        customer_email = f"{student.silete_id.replace('/', '_')}@sileti.internal"
+
         try:
+            # request the checkout URL from Nomba
             checkout_url = payments.create_checkout_order(
-                amount_kobo=amount_kobo, order_ref=order_ref, school_subaccount_id=subaccount_id, customer_email=student.parent_email
+                amount_kobo=amount_kobo, 
+                order_ref=order_ref, 
+                school_subaccount_id=subaccount_id, 
+                customer_email=customer_email
             )
+            
+            # INITIALIZE THE TRANSACTION RECORD IN THE DATABASE
+            new_transaction = models.Transaction(
+                org_id=student.org_id,
+                invoice_id=invoice.id,
+                amount=amount_to_pay, # Store as absolute numeric balance float/decimal
+                reference=order_ref, # Used to find this row when the webhook alerts Nomba of a successful payment
+                status=models.TransactionStatus.PENDING.value,
+                checkout_url=checkout_url,
+                customer_phone=parent_phone
+            )
+            
+            db.add(new_transaction)
+            db.commit() # Save to DB instantly before displaying to the parent
+            
             return {"success": True, "checkout_url": checkout_url, "amount": amount_to_pay}
+            
         except Exception as e:
+            db.rollback() # Roll back DB operations if the Nomba network gateway dropped
             logger.error(f"Nomba order generation caught an exception: {str(e)}")
             return {"error": f"Could not generate secure session link: {str(e)}"}
+
+
 
     # --- EXECUTE GEMINI CALL ---
     try:

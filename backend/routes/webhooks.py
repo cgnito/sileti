@@ -8,6 +8,8 @@ from pydantic import BaseModel, Field
 from typing import Dict, Any
 from sqlalchemy.orm import Session
 
+from . import payments
+from decimal import Decimal
 from models import Transaction, Invoice, InvoiceStatus, TransactionStatus, WebhookLog
 from database import get_db 
 from schemas.webhooks import WebhookPayload
@@ -61,40 +63,84 @@ async def nomba_webhook_handler(
 
     # PROCESS VALIDATED TRANSACTION
     if payload.event_type == "payment_success":
-        # Nomba sends back your original tracking reference inside merchantTxRef
-        merchant_ref = transaction_data.get("merchantTxRef")
-        received_amount = transaction_data.get("transactionAmount")
+        # Prefer explicit order reference in webhook payload; fall back to merchantTxRef
+        order_ref = None
+        order_block = payload.data.get("order") or {}
+        order_ref = order_block.get("orderReference") or transaction_data.get("merchantTxRef")
 
-        # Find the pending transaction in your PostgreSQL DB
-        db_transaction = db.query(Transaction).filter(Transaction.reference == merchant_ref).first()
-        
-        if db_transaction:
-            # Update Transaction status
+        if not order_ref:
+            logger.error("No orderReference found in webhook payload")
+            return {"status": "ignored", "message": "No orderReference provided"}
+
+        # Server-side verify with Nomba to ensure payment really succeeded
+        try:
+            verification = payments.verify_checkout_transaction(order_ref)
+        except Exception as exc:
+            logger.error("Error verifying transaction %s: %s", order_ref, exc)
+            raise HTTPException(status_code=502, detail="Failed to verify transaction with Nomba") from exc
+
+        status_from_nomba = verification.get("status")
+        # Find the transaction record by reference (our orderReference)
+        db_transaction = db.query(Transaction).filter(Transaction.reference == order_ref).first()
+
+        if not db_transaction:
+            logger.error("Transaction reference %s not found in database.", order_ref)
+            # still record the webhook so it won't be retried
+            new_log = WebhookLog(request_id=payload.request_id, event_type=payload.event_type)
+            db.add(new_log)
+            db.commit()
+            return {"status": "ignored", "message": "Transaction reference mismatch"}
+
+        # write transaction status returned by Nomba
+        if status_from_nomba == "SUCCESS":
             db_transaction.status = TransactionStatus.SUCCESS.value
-            db_transaction.payment_method = transaction_data.get("channel") # e.g. "CARD" or "TRANSFER"
-            
-            # Fetch and update the Invoice total paid metrics
+            # payment method may be inside verification or webhook transaction block
+            db_transaction.payment_method = transaction_data.get("channel") or verification.get("paymentMethod")
+
+            # Update invoice paid amount and status
             invoice = db_transaction.invoice
             if invoice:
-                # Add the new payment amount to what was paid before
-                invoice.paid_amount += received_amount
-                
-                # Check if full amount or partial amount has been reconciled
+                received_amount = transaction_data.get("transactionAmount") or verification.get("amount") or 0
+                try:
+                    invoice.paid_amount += Decimal(str(received_amount))
+                except Exception:
+                    invoice.paid_amount += received_amount
+
                 if invoice.paid_amount >= invoice.total_amount:
                     invoice.status = InvoiceStatus.PAID
                 else:
                     invoice.status = InvoiceStatus.PARTIAL
 
-            # Log request ID to mark it processed permanently
+        else:
+            # non-success — mark FAILED for clarity
+            db_transaction.status = TransactionStatus.FAILED.value
+
+        # Log and commit
+        new_log = WebhookLog(request_id=payload.request_id, event_type=payload.event_type)
+        db.add(new_log)
+        db.commit()
+        logger.info("Processed webhook for order %s with Nomba status %s", order_ref, status_from_nomba)
+
+    elif payload.event_type == "payment_failed":
+        merchant_ref = transaction_data.get("merchantTxRef") or transaction_data.get("transactionId")
+        db_transaction = db.query(Transaction).filter(Transaction.reference == merchant_ref).first()
+        if db_transaction:
+            db_transaction.status = TransactionStatus.FAILED.value
             new_log = WebhookLog(request_id=payload.request_id, event_type=payload.event_type)
             db.add(new_log)
-            
-            
             db.commit()
-            logger.info(f"Successfully processed payment for transaction ref: {merchant_ref}")
         else:
-            logger.error(f"Transaction reference {merchant_ref} not found in database.")
-            # We still want to log the webhook event or return 200 so Nomba doesn't keep retrying an unknown ref forever
-            return {"status": "ignored", "message": "Transaction reference mismatch"}
+            logger.warning("payment_failed for unknown transaction %s", merchant_ref)
+
+    elif payload.event_type == "payment_reversal":
+        merchant_ref = transaction_data.get("merchantTxRef") or transaction_data.get("transactionId")
+        db_transaction = db.query(Transaction).filter(Transaction.reference == merchant_ref).first()
+        if db_transaction:
+            db_transaction.status = TransactionStatus.REVERSED.value
+            new_log = WebhookLog(request_id=payload.request_id, event_type=payload.event_type)
+            db.add(new_log)
+            db.commit()
+        else:
+            logger.warning("payment_reversal for unknown transaction %s", merchant_ref)
 
     return {"status": "success"}
