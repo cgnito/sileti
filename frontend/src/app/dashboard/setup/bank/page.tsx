@@ -83,8 +83,17 @@ export default function BankSetupPage() {
 
   const filteredBanks = useMemo(() => {
     const query = search.trim().toLowerCase();
-    if (!query) return banks;
-    return banks.filter((bank) => bank.bank_name.toLowerCase().includes(query) || bank.bank_code.includes(query));
+    const normalized = query ? banks.filter((bank) => bank.bank_name.toLowerCase().includes(query) || bank.bank_code.includes(query)) : banks;
+
+    const seen = new Set<string>();
+    return normalized.filter((bank) => {
+      const signature = `${bank.bank_code}|${bank.bank_name}`;
+      if (seen.has(signature)) {
+        return false;
+      }
+      seen.add(signature);
+      return true;
+    });
   }, [banks, search]);
 
   useEffect(() => {
@@ -200,7 +209,7 @@ export default function BankSetupPage() {
               >
                 <option value="">Select a bank</option>
                 {filteredBanks.map((bank) => (
-                  <option key={bank.bank_code} value={bank.bank_code}>
+                  <option key={`${bank.bank_code}-${bank.bank_name}`} value={bank.bank_code}>
                     {bank.bank_name} ({bank.bank_code})
                   </option>
                 ))}
