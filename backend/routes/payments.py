@@ -309,17 +309,20 @@ def create_checkout_order(amount_kobo: int, order_ref: str, school_subaccount_id
     return data["checkoutLink"]
 
 
-def verify_checkout_transaction(order_reference: str) -> dict:
+def verify_checkout_transaction(transaction_ref: str) -> dict:
     """
-    Verify a checkout transaction with Nomba using the `orderReference`.
+    Verify a checkout transaction with Nomba using only the transactionRef.
 
-    Calls `GET /v1/transactions/accounts/single?orderReference=...` and returns
+    Calls `GET /v1/transactions/accounts/single?transactionRef=...` and returns
     the `data` block from Nomba. Raises HTTPException on errors.
     """
-    if not order_reference:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="order_reference required")
+    if not transaction_ref:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, 
+            detail="transaction_ref is required"
+        )
 
-    endpoint = f"v1/transactions/accounts/single?orderReference={order_reference}"
+    endpoint = f"v1/transactions/accounts/single?transactionRef={transaction_ref}"
     result = make_nomba_request(method="GET", endpoint=endpoint)
 
     data = result.get("data")

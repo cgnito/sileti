@@ -4,8 +4,7 @@ import hashlib
 import base64
 import logging
 from fastapi import APIRouter, Request, Header, HTTPException, status, Depends
-from pydantic import BaseModel, Field
-from typing import Dict, Any
+
 from sqlalchemy.orm import Session
 
 from . import payments
@@ -60,87 +59,112 @@ async def nomba_webhook_handler(
     existing_log = db.query(WebhookLog).filter(WebhookLog.request_id == payload.request_id).first()
     if existing_log:
         return {"status": "success", "message": "Already processed."}
+    
 
-    # PROCESS VALIDATED TRANSACTION
+    # Extract transaction token for identification
+    transaction_id = transaction_data.get("transactionId")
+    if not transaction_id:
+        logger.warning("Received event '%s' without a transactionId inside data block.", payload.event_type)
+        return {"status": "ignored", "message": "Missing transaction identification token."}
+
+
+    # 3. PROCESS VALIDATED AND IDEMPOTENT WEBHOOK
     if payload.event_type == "payment_success":
-        # Prefer explicit order reference in webhook payload; fall back to merchantTxRef
-        order_ref = None
-        order_block = payload.data.get("order") or {}
-        order_ref = order_block.get("orderReference") or transaction_data.get("merchantTxRef")
-
-        if not order_ref:
-            logger.error("No orderReference found in webhook payload")
-            return {"status": "ignored", "message": "No orderReference provided"}
-
-        # Server-side verify with Nomba to ensure payment really succeeded
         try:
-            verification = payments.verify_checkout_transaction(order_ref)
+            # verify via api and try to get the local reference mapping to our system
+            verification = payments.verify_checkout_transaction(transaction_id)
         except Exception as exc:
-            logger.error("Error verifying transaction %s: %s", order_ref, exc)
-            raise HTTPException(status_code=502, detail="Failed to verify transaction with Nomba") from exc
+            logger.error("Error executing verify_checkout_transaction for %s: %s", transaction_id, exc)
+            raise HTTPException(status_code=502, detail="Failed to verify transaction status with provider.")
 
         status_from_nomba = verification.get("status")
-        # Find the transaction record by reference (our orderReference)
-        db_transaction = db.query(Transaction).filter(Transaction.reference == order_ref).first()
+        local_ref = verification.get("orderReference") or verification.get("merchantTxRef")
+
+        if not local_ref:
+            logger.error("Verification API response omitted order reference mapping for ID: %s", transaction_id)
+            return {"status": "ignored", "message": "Could not map provider token to system order reference."}
+
+        db_transaction = db.query(Transaction).filter(Transaction.reference == local_ref).first()
 
         if not db_transaction:
-            logger.error("Transaction reference %s not found in database.", order_ref)
-            # still record the webhook so it won't be retried
+            logger.error("No record found in local database matching order reference: %s", local_ref)
             new_log = WebhookLog(request_id=payload.request_id, event_type=payload.event_type)
             db.add(new_log)
             db.commit()
-            return {"status": "ignored", "message": "Transaction reference mismatch"}
+            return {"status": "ignored", "message": "Transaction record reference not found."}
 
-        # write transaction status returned by Nomba
         if status_from_nomba == "SUCCESS":
             db_transaction.status = TransactionStatus.SUCCESS.value
-            # payment method may be inside verification or webhook transaction block
-            db_transaction.payment_method = transaction_data.get("channel") or verification.get("paymentMethod")
+            db_transaction.payment_method = transaction_data.get("type")
 
-            # Update invoice paid amount and status
             invoice = db_transaction.invoice
             if invoice:
                 received_amount = transaction_data.get("transactionAmount") or verification.get("amount") or 0
-                try:
-                    invoice.paid_amount += Decimal(str(received_amount))
-                except Exception:
-                    invoice.paid_amount += received_amount
+
+                # Ensure float/int safely converts to Decimal via String initialization to prevent TypeError
+                invoice.paid_amount += Decimal(str(received_amount))
 
                 if invoice.paid_amount >= invoice.total_amount:
                     invoice.status = InvoiceStatus.PAID
                 else:
                     invoice.status = InvoiceStatus.PARTIAL
-
         else:
-            # non-success — mark FAILED for clarity
             db_transaction.status = TransactionStatus.FAILED.value
-
-        # Log and commit
-        new_log = WebhookLog(request_id=payload.request_id, event_type=payload.event_type)
-        db.add(new_log)
-        db.commit()
-        logger.info("Processed webhook for order %s with Nomba status %s", order_ref, status_from_nomba)
 
     elif payload.event_type == "payment_failed":
-        merchant_ref = transaction_data.get("merchantTxRef") or transaction_data.get("transactionId")
-        db_transaction = db.query(Transaction).filter(Transaction.reference == merchant_ref).first()
-        if db_transaction:
-            db_transaction.status = TransactionStatus.FAILED.value
-            new_log = WebhookLog(request_id=payload.request_id, event_type=payload.event_type)
-            db.add(new_log)
-            db.commit()
+        try:
+            # Step up lookup to discover your original transaction record context safely
+            verification = payments.verify_checkout_transaction(transaction_id)
+            local_ref = verification.get("orderReference") or verification.get("merchantTxRef")
+        except Exception as exc:
+            logger.error("Failed to verify failed transaction %s via API: %s", transaction_id, exc)
+            local_ref = None
+
+        if local_ref:
+            db_transaction = db.query(Transaction).filter(Transaction.reference == local_ref).first()
+            if db_transaction:
+                db_transaction.status = TransactionStatus.FAILED.value
+                logger.info("Updated status to FAILED for transaction reference: %s", local_ref)
+            else:
+                logger.warning("No matching local transaction for failed reference: %s", local_ref)
         else:
-            logger.warning("payment_failed for unknown transaction %s", merchant_ref)
+            logger.warning("Payment failure notification received; could not resolve order mapping for: %s", transaction_id)
+
 
     elif payload.event_type == "payment_reversal":
-        merchant_ref = transaction_data.get("merchantTxRef") or transaction_data.get("transactionId")
-        db_transaction = db.query(Transaction).filter(Transaction.reference == merchant_ref).first()
-        if db_transaction:
-            db_transaction.status = TransactionStatus.REVERSED.value
-            new_log = WebhookLog(request_id=payload.request_id, event_type=payload.event_type)
-            db.add(new_log)
-            db.commit()
+        try:
+            # Fetch details via API to confirm exact target of the reversal
+            verification = payments.verify_checkout_transaction(transaction_id)
+            local_ref = verification.get("orderReference") or verification.get("merchantTxRef")
+        except Exception as exc:
+            logger.error("Failed to verify reversed transaction %s via API: %s", transaction_id, exc)
+            local_ref = None
+
+        if local_ref:
+            db_transaction = db.query(Transaction).filter(Transaction.reference == local_ref).first()
+            if db_transaction:
+                db_transaction.status = TransactionStatus.REVERSED.value
+                
+                # Rollback invoice payment amounts conditionally if the invoice state was altered
+                invoice = db_transaction.invoice
+                if invoice:
+                    reversed_amount = transaction_data.get("transactionAmount") or verification.get("amount") or 0
+                    # Safeguard calculation against float runtime mismatches via direct casting 
+                    invoice.paid_amount -= Decimal(str(reversed_amount))
+                    
+                    if invoice.paid_amount < 0:
+                        invoice.paid_amount = Decimal("0.00")
+                        
+                    invoice.status = InvoiceStatus.PARTIAL if invoice.paid_amount > 0 else InvoiceStatus.UNPAID
+                logger.info("Processed reversal for transaction reference: %s", local_ref)
+            else:
+                logger.warning("No matching local transaction found for reversal reference: %s", local_ref)
         else:
-            logger.warning("payment_reversal for unknown transaction %s", merchant_ref)
+            logger.warning("Payment reversal notification received; could not resolve order mapping for: %s", transaction_id)
+
+    # 4. WRITE FINAL IDEMPOTENCY LOG & COMMIT TRANSACTION
+    new_log = WebhookLog(request_id=payload.request_id, event_type=payload.event_type)
+    db.add(new_log)
+    db.commit()
 
     return {"status": "success"}
