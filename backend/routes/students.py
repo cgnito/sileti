@@ -126,27 +126,49 @@ def bulk_upload_students(
     content = file.file.read().decode('utf-8')
     reader = csv.DictReader(StringIO(content))
     students_to_add = []
-    
-    for row in reader:
-        if not row.get('first_name') or not row.get('last_name'):
-            continue
-        
-        readable_id = format_silete_id(short_code, year, current_serial)
-        new_student = models.Student(
-            org_id=current_user.org_id,
-            class_id=class_id,
-            silete_id=readable_id,
-            serial_number=current_serial,
-            admission_year=year,
-            first_name=row['first_name'],
-            last_name=row['last_name'],
-            date_of_birth=datetime.strptime(row['dob'], '%Y-%m-%d').date() if row.get('dob') else None
-        )
-        students_to_add.append(new_student)
-        current_serial += 1
 
-    db.add_all(students_to_add)
-    db.commit()
+    try:
+        for row in reader:
+            first_name = (row.get('first_name') or '').strip()
+            last_name = (row.get('last_name') or '').strip()
+            parent_phone = (row.get('parent_phone') or '').strip() or None
+            dob_value = (row.get('dob') or '').strip()
+            date_of_birth = None
+
+            if not first_name or not last_name:
+                continue
+
+            if dob_value:
+                try:
+                    date_of_birth = datetime.strptime(dob_value, '%Y-%m-%d').date()
+                except ValueError:
+                    date_of_birth = None
+
+            readable_id = format_silete_id(short_code, year, current_serial)
+            new_student = models.Student(
+                org_id=current_user.org_id,
+                class_id=class_id,
+                silete_id=readable_id,
+                serial_number=current_serial,
+                admission_year=year,
+                first_name=first_name,
+                last_name=last_name,
+                date_of_birth=date_of_birth
+            )
+            db.add(new_student)
+            db.flush()
+            _sync_primary_parent(db, new_student, current_user.org_id, parent_phone)
+            students_to_add.append(new_student)
+            current_serial += 1
+
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Failed to process bulk student upload: {str(exc)}"
+        ) from exc
+
     return {"message": f"Successfully admitted {len(students_to_add)} students to {school_class.name}"}
 
 

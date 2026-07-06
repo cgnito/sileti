@@ -24,7 +24,8 @@ logger = logging.getLogger(__name__)
 TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID")
 TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN")
 TWILIO_WHATSAPP_FROM = os.getenv("TWILIO_WHATSAPP_FROM")
-TWILIO_WHATSAPP_CONTENT_SID = os.getenv("TWILIO_WHATSAPP_CONTENT_SID")
+TWILIO_WHATSAPP_INVOICE_GENERATED_CONTENT_SID = os.getenv("TWILIO_WHATSAPP_INVOICE_GENERATED_CONTENT_SID")
+TWILIO_WHATSAPP_PAYMENT_RECEIVED_CONTENT_SID = os.getenv("TWILIO_WHATSAPP_PAYMENT_RECEIVED_CONTENT_SID")
 
 
 def _format_currency(value: Decimal | float | int | None) -> str:
@@ -73,14 +74,48 @@ def _build_payment_message(invoice: models.Invoice) -> str:
 
 def _build_notification_payload(invoice: models.Invoice, event_type: str) -> dict:
     student = invoice.student
+    student_name = f"{student.first_name} {student.last_name}" if student else "the student"
+
+    if event_type == "payment_received":
+        return {
+            "1": student_name,
+            "2": _format_currency(invoice.paid_amount),
+            "3": _format_currency(invoice.total_amount),
+        }
+
+    class_name = student.school_class.name if student and student.school_class else "their class"
     return {
+        "1": student_name,
+        "2": class_name,
+        "3": _format_currency(invoice.total_amount),
+    }
+
+
+def _build_notification_log_payload(invoice: models.Invoice, event_type: str, *, body: str, extra: dict | None = None) -> dict:
+    student = invoice.student
+    payload = {
         "invoice_id": str(invoice.id),
-        "student_name": f"{student.first_name} {student.last_name}" if student else None,
-        "class_name": student.school_class.name if student and student.school_class else None,
         "event_type": event_type,
+        "student_name": f"{student.first_name} {student.last_name}" if student else "the student",
+        "class_name": student.school_class.name if student and student.school_class else "their class",
         "amount": _format_currency(invoice.total_amount),
         "paid_amount": _format_currency(invoice.paid_amount),
+        "body": body,
+        **_build_notification_payload(invoice, event_type),
     }
+    if extra:
+        payload.update(extra)
+    return payload
+
+
+def _resolve_twilio_content_sid(event_type: str) -> str | None:
+    if event_type == "payment_received":
+        return TWILIO_WHATSAPP_PAYMENT_RECEIVED_CONTENT_SID
+
+    if event_type == "invoice_generated":
+        return TWILIO_WHATSAPP_INVOICE_GENERATED_CONTENT_SID
+
+    return None
 
 
 def _build_notification_body(invoice: models.Invoice, event_type: str) -> str:
@@ -145,7 +180,13 @@ def _notification_already_sent(db, *, event_type: str, invoice_id: UUID, recipie
     )
 
 
-def _send_whatsapp_message(recipient_phone: str, body: str, payload: dict | None = None) -> tuple[str | None, str | None]:
+def _send_whatsapp_message(
+    recipient_phone: str,
+    body: str,
+    payload: dict | None = None,
+    *,
+    content_sid: str | None = None,
+) -> tuple[str | None, str | None]:
     client = _get_twilio_client()
     sender = _normalize_whatsapp_address(TWILIO_WHATSAPP_FROM)
     recipient = _normalize_whatsapp_address(recipient_phone)
@@ -158,8 +199,8 @@ def _send_whatsapp_message(recipient_phone: str, body: str, payload: dict | None
             "from_": sender,
             "to": recipient,
         }
-        if TWILIO_WHATSAPP_CONTENT_SID:
-            message_kwargs["content_sid"] = TWILIO_WHATSAPP_CONTENT_SID
+        if content_sid:
+            message_kwargs["content_sid"] = content_sid
             message_kwargs["content_variables"] = json.dumps(payload or {})
         else:
             message_kwargs["body"] = body
@@ -178,9 +219,10 @@ def _send_invoice_notification(
     *,
     allow_existing: bool = False,
     notification_log: models.NotificationLog | None = None,
+    payload: dict | None = None,
 ) -> tuple[str | None, str | None]:
     body = _build_notification_body(invoice, event_type)
-    payload = _build_notification_payload(invoice, event_type)
+    payload = payload or _build_notification_payload(invoice, event_type)
     normalized_phone = utils.normalize_phone_number(recipient_phone)
     if not normalized_phone:
         return None, "Invalid recipient phone number."
@@ -188,7 +230,12 @@ def _send_invoice_notification(
     if not allow_existing and _notification_already_sent(db, event_type=event_type, invoice_id=invoice.id, recipient_phone=normalized_phone):
         return None, None
 
-    return _send_whatsapp_message(normalized_phone, body, payload=payload)
+    return _send_whatsapp_message(
+        normalized_phone,
+        body,
+        payload=payload,
+        content_sid=_resolve_twilio_content_sid(event_type),
+    )
 
 
 def _notify_invoice_event(db, invoice: models.Invoice, event_type: str) -> None:
@@ -213,12 +260,14 @@ def _notify_invoice_event(db, invoice: models.Invoice, event_type: str) -> None:
             recipient_phone="",
             status="skipped",
             error_message="No parent WhatsApp number is stored for this student.",
-            payload={"invoice_id": str(invoice.id)},
+            payload=_build_notification_log_payload(invoice, event_type, body=_build_notification_body(invoice, event_type)),
         )
         db.commit()
         return
 
     body = _build_invoice_message(invoice) if event_type == "invoice_generated" else _build_payment_message(invoice)
+    payload = _build_notification_payload(invoice, event_type)
+    log_payload = _build_notification_log_payload(invoice, event_type, body=body)
 
     for phone in phones:
         normalized_phone = utils.normalize_phone_number(phone)
@@ -234,13 +283,7 @@ def _notify_invoice_event(db, invoice: models.Invoice, event_type: str) -> None:
                 recipient_phone=phone,
                 status="skipped",
                 error_message="Invalid recipient phone number.",
-                payload={
-                    "invoice_id": str(invoice.id),
-                    "student_name": f"{student.first_name} {student.last_name}",
-                    "class_name": student.school_class.name if student.school_class else None,
-                    "body": body,
-                    "event_type": event_type,
-                },
+                payload=log_payload,
             )
             continue
 
@@ -248,7 +291,13 @@ def _notify_invoice_event(db, invoice: models.Invoice, event_type: str) -> None:
             continue
 
         idempotency_key = _notification_idempotency_key(event_type, invoice.id, normalized_phone)
-        message_sid, error_message = _send_invoice_notification(db, invoice, event_type, normalized_phone)
+        message_sid, error_message = _send_invoice_notification(
+            db,
+            invoice,
+            event_type,
+            normalized_phone,
+            payload=payload,
+        )
 
         with db.begin_nested():
             try:
@@ -264,10 +313,7 @@ def _notify_invoice_event(db, invoice: models.Invoice, event_type: str) -> None:
                     status="sent" if message_sid else "failed",
                     message_sid=message_sid,
                     error_message=error_message,
-                    payload={
-                        **_build_notification_payload(invoice, event_type),
-                        "body": body,
-                    },
+                    payload=log_payload,
                 )
                 db.flush()
             except IntegrityError:
@@ -306,16 +352,18 @@ def resend_notification_attempt(db, notification_log_id: UUID, org_id: UUID) -> 
         notification_log.recipient_phone,
         allow_existing=True,
         notification_log=notification_log,
+        payload=_build_notification_payload(invoice, notification_log.event_type),
     )
 
     notification_log.message_sid = message_sid
     notification_log.status = "sent" if message_sid else "failed"
     notification_log.error_message = error_message
-    notification_log.payload = {
-        **_build_notification_payload(invoice, notification_log.event_type),
-        "body": _build_notification_body(invoice, notification_log.event_type),
-        "resent_from_notification_id": str(notification_log.id),
-    }
+    notification_log.payload = _build_notification_log_payload(
+        invoice,
+        notification_log.event_type,
+        body=_build_notification_body(invoice, notification_log.event_type),
+        extra={"resent_from_notification_id": str(notification_log.id)},
+    )
 
     db.commit()
     db.refresh(notification_log)
