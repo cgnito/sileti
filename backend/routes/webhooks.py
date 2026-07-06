@@ -4,8 +4,10 @@ import hashlib
 import base64
 import logging
 from decimal import Decimal
+from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Depends, Header
+from fastapi import Request
 from sqlalchemy.orm import Session
 
 from . import payments
@@ -31,12 +33,43 @@ def _normalize_response_code(value: object) -> str:
     return str(value)
 
 
-def _get_data_blocks(payload: WebhookPayload) -> tuple[dict, dict, dict]:
+def _get_data_blocks(payload: WebhookPayload) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
     data_block = payload.data if isinstance(payload.data, dict) else {}
-    merchant = data_block.get("merchant") if isinstance(data_block.get("merchant"), dict) else {}
-    transaction_data = data_block.get("transaction") if isinstance(data_block.get("transaction"), dict) else {}
-    order_data = data_block.get("order") if isinstance(data_block.get("order"), dict) else {}
+    merchant_value = data_block.get("merchant")
+    transaction_value = data_block.get("transaction")
+    order_value = data_block.get("order")
+
+    merchant = merchant_value if isinstance(merchant_value, dict) else {}
+    transaction_data = transaction_value if isinstance(transaction_value, dict) else {}
+    order_data = order_value if isinstance(order_value, dict) else {}
     return merchant, transaction_data, order_data
+
+
+def _resolve_checkout_reference(data: dict, fallback: str | None = None) -> str | None:
+    for key in (
+        "onlineCheckoutOrderReference",
+        "orderReference",
+        "merchantTxRef",
+        "onlineCheckoutOrderId",
+    ):
+        value = data.get(key)
+        if value:
+            return str(value)
+
+    return fallback
+
+
+def _resolve_verified_amount(data: dict, fallback=None):
+    for key in (
+        "onlineCheckoutAmount",
+        "amount",
+        "transactionAmount",
+    ):
+        value = data.get(key)
+        if value is not None and value != "":
+            return value
+
+    return fallback
 
 
 def _build_signature_payload(payload: WebhookPayload, nomba_timestamp: str) -> str:
@@ -144,13 +177,19 @@ def _commit_event(
 @router.post("/nomba")
 async def nomba_webhook_handler(
     payload: WebhookPayload,
-    nomba_signature: str = Header(..., alias="nomba-signature"),
+    nomba_signature: str | None = Header(None, alias="nomba-signature"),
+    nomba_sig_value: str | None = Header(None, alias="nomba-sig-value"),
     nomba_timestamp: str = Header(..., alias="nomba-timestamp"),
     background_tasks: BackgroundTasks = None,
     db: Session = Depends(get_db),
 ):
     if not NOMBA_WEBHOOK_SECRET:
         raise HTTPException(status_code=500, detail="Webhook secret missing configuration.")
+
+    # Accept either header that Nomba may send
+    incoming_signature = (nomba_signature or nomba_sig_value or "").strip()
+    if not incoming_signature:
+        raise HTTPException(status_code=400, detail="Missing Nomba signature header.")
 
     try:
         hashing_payload = _build_signature_payload(payload, nomba_timestamp)
@@ -165,7 +204,18 @@ async def nomba_webhook_handler(
     ).digest()
     computed_signature = base64.b64encode(computed_digest).decode("utf-8")
 
-    if not hmac.compare_digest(nomba_signature.strip(), computed_signature):
+    # Optional debug: when DEBUG_NOMBA_HOOKS=1, log incoming signature and computed signature
+    try:
+        if os.environ.get("DEBUG_NOMBA_HOOKS") == "1":
+            logger.info("Nomba incoming signature: %s", nomba_signature)
+            logger.info("Nomba computed signature: %s", computed_signature)
+            logger.info("Nomba timestamp header: %s", nomba_timestamp)
+            logger.info("Nomba hashing payload: %s", hashing_payload)
+    except Exception:
+        # Never crash webhook handler because of logging
+        logger.debug("Failed to emit debug webhook logs.")
+
+    if not hmac.compare_digest(incoming_signature, computed_signature):
         raise HTTPException(status_code=401, detail="Signature mismatch.")
 
     existing_log = db.query(WebhookLog).filter(WebhookLog.request_id == payload.request_id).first()
@@ -178,7 +228,7 @@ async def nomba_webhook_handler(
     gateway_reference = None
 
     if payload.event_type == "payment_success":
-        order_ref = order_data.get("orderReference") or transaction_data.get("merchantTxRef")
+        order_ref = _resolve_checkout_reference(order_data, transaction_data.get("merchantTxRef"))
 
         verification = {}
         if transaction_id:
@@ -190,11 +240,7 @@ async def nomba_webhook_handler(
         if not verification and order_ref:
             verification = payments.verify_checkout_transaction(order_ref)
 
-        resolved_order_ref = (
-            verification.get("orderReference")
-            or verification.get("merchantTxRef")
-            or order_ref
-        )
+        resolved_order_ref = _resolve_checkout_reference(verification, order_ref)
         gateway_reference = resolved_order_ref or transaction_id
 
         if not resolved_order_ref:
@@ -209,7 +255,7 @@ async def nomba_webhook_handler(
             )
             return {"status": "ignored", "message": "No checkout reference provided"}
 
-        db_transaction = db.query(Transaction).filter(Transaction.reference == resolved_order_ref).first()
+        db_transaction: Any = db.query(Transaction).filter(Transaction.reference == resolved_order_ref).first()
         if not db_transaction:
             logger.error("Transaction reference %s not found in database.", resolved_order_ref)
             _commit_event(
@@ -222,7 +268,10 @@ async def nomba_webhook_handler(
             )
             return {"status": "ignored", "message": "Transaction reference mismatch"}
 
-        status_from_nomba = verification.get("status")
+        status_from_nomba = (verification.get("status") or "").upper()
+
+        if status_from_nomba and status_from_nomba != "SUCCESS":
+            logger.warning("Checkout verification for %s returned non-success status %s.", resolved_order_ref, status_from_nomba)
 
         existing_success_ledger = db.query(PaymentLedger).filter(
             PaymentLedger.payment_flow == payment_flow,
@@ -245,7 +294,7 @@ async def nomba_webhook_handler(
                 ledger_status=PaymentLedgerStatus.IGNORED.value,
                 org_id=db_transaction.org_id,
                 invoice_id=db_transaction.invoice_id,
-                amount=transaction_data.get("transactionAmount") or verification.get("amount") or db_transaction.amount,
+                amount=_resolve_verified_amount(verification, transaction_data.get("transactionAmount") or db_transaction.amount),
                 payment_method=db_transaction.payment_method,
                 customer_name=transaction_data.get("narration") or transaction_data.get("senderName") or transaction_data.get("customerName"),
             )
@@ -253,20 +302,20 @@ async def nomba_webhook_handler(
 
         if status_from_nomba == "SUCCESS":
             db_transaction.status = TransactionStatus.SUCCESS.value
-            db_transaction.payment_method = transaction_data.get("channel") or verification.get("paymentMethod")
+            db_transaction.payment_method = transaction_data.get("channel") or verification.get("paymentMethod") or verification.get("onlineCheckoutPaymentMethod")
 
-            invoice = db_transaction.invoice
+            invoice: Any = db_transaction.invoice
             if invoice:
-                received_amount = transaction_data.get("transactionAmount") or verification.get("amount") or 0
+                received_amount = _resolve_verified_amount(verification, transaction_data.get("transactionAmount") or 0)
                 try:
                     invoice.paid_amount += Decimal(str(received_amount))
                 except Exception:
                     invoice.paid_amount += received_amount
 
                 if invoice.paid_amount >= invoice.total_amount:
-                    invoice.status = InvoiceStatus.PAID
+                    invoice.status = InvoiceStatus.PAID.value
                 else:
-                    invoice.status = InvoiceStatus.PARTIAL
+                    invoice.status = InvoiceStatus.PARTIAL.value
         else:
             db_transaction.status = TransactionStatus.FAILED.value
 
@@ -284,8 +333,8 @@ async def nomba_webhook_handler(
             ledger_status=ledger_status,
             org_id=db_transaction.org_id,
             invoice_id=db_transaction.invoice_id,
-            amount=transaction_data.get("transactionAmount") or verification.get("amount") or db_transaction.amount,
-            payment_method=db_transaction.payment_method,
+            amount=_resolve_verified_amount(verification, transaction_data.get("transactionAmount") or db_transaction.amount),
+            payment_method=db_transaction.payment_method or verification.get("paymentMethod") or verification.get("onlineCheckoutPaymentMethod"),
             customer_name=transaction_data.get("narration") or transaction_data.get("senderName") or transaction_data.get("customerName"),
         )
         logger.info("Processed checkout webhook for order %s with Nomba status %s", resolved_order_ref, status_from_nomba)
@@ -297,7 +346,7 @@ async def nomba_webhook_handler(
     elif payload.event_type == "payment_failed":
         gateway_reference = order_data.get("orderReference") or transaction_data.get("merchantTxRef") or transaction_id
 
-        db_transaction = db.query(Transaction).filter(Transaction.reference == gateway_reference).first() if gateway_reference else None
+        db_transaction: Any = db.query(Transaction).filter(Transaction.reference == gateway_reference).first() if gateway_reference else None
         if db_transaction:
             db_transaction.status = TransactionStatus.FAILED.value
         else:
@@ -320,7 +369,7 @@ async def nomba_webhook_handler(
     elif payload.event_type == "payment_reversal":
         gateway_reference = order_data.get("orderReference") or transaction_data.get("merchantTxRef") or transaction_id
 
-        db_transaction = db.query(Transaction).filter(Transaction.reference == gateway_reference).first() if gateway_reference else None
+        db_transaction: Any = db.query(Transaction).filter(Transaction.reference == gateway_reference).first() if gateway_reference else None
         if db_transaction:
             db_transaction.status = TransactionStatus.REVERSED.value
         else:
@@ -351,3 +400,20 @@ async def nomba_webhook_handler(
         )
 
     return {"status": "success"}
+
+
+@router.post("/nomba-debug")
+async def nomba_webhook_debug(request: Request):
+    """Temporary debug endpoint: logs raw headers and body when DEBUG_NOMBA_HOOKS=1."""
+    if os.environ.get("DEBUG_NOMBA_HOOKS") != "1":
+        raise HTTPException(status_code=404, detail="Not found")
+
+    try:
+        body = await request.body()
+        headers = dict(request.headers)
+        logger.info("[NOMBA DEBUG] incoming headers: %s", headers)
+        logger.info("[NOMBA DEBUG] raw body: %s", body.decode("utf-8", errors="replace"))
+    except Exception as e:
+        logger.exception("Failed to log debug webhook: %s", e)
+
+    return {"status": "ok"}
