@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { AlertCircle, Loader2 } from "lucide-react";
 import { Button } from "@/src/components/shared/Button";
 import { useStaffMutations } from "@/src/features/dashboard/staff/hooks/staff.hooks";
+import { RequireRole } from "@/src/components/auth/RequireRole";
 import { DashboardHero, DashboardPageShell, DashboardPanel } from "@/src/components/dashboard/PageChrome";
 
 const roleOptions = ["staff", "bursar"];
@@ -28,6 +29,7 @@ export default function InviteStaffPage() {
   }
 
   return (
+    <RequireRole>
     <DashboardPageShell className="max-w-3xl">
       <DashboardHero
         eyebrow="Staff management"
@@ -92,5 +94,6 @@ export default function InviteStaffPage() {
         </form>
       </DashboardPanel>
     </DashboardPageShell>
+    </RequireRole>
   );
 }

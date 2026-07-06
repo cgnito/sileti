@@ -1,4 +1,3 @@
-# NEED COME BACK AND CLEAN UP TOO, IF NEEDED
 import os
 import time
 import logging
@@ -6,14 +5,9 @@ from datetime import datetime, timezone
 import requests
 from fastapi import HTTPException, status
 
+from utils import FRONTEND_URL
+
 logger = logging.getLogger(__name__)
-
-# Fallback static hackathon sub-account id
-NOMBA_HACKATHON_SUBACCOUNT = os.environ.get("NOMBA_HACKATHON_SUBACCOUNT")
-
-
-def _get_hackathon_subaccount_id() -> str | None:
-    return os.environ.get("NOMBA_HACKATHON_SUBACCOUNT") or NOMBA_HACKATHON_SUBACCOUNT
 
 # In-memory token cache store to prevent redundant token initialization requests
 _token_cache = {
@@ -26,6 +20,18 @@ _token_cache = {
 
 def _normalize_base_url() -> str:
     return os.environ.get("NOMBA_BASE_URL", "https://sandbox.nomba.com").rstrip("/")
+
+
+def _resolve_checkout_callback_url() -> str:
+    """
+    Resolve the public callback URL that Nomba should redirect back to after checkout.
+    Prefer an explicit env override, then fall back to the app's frontend origin.
+    """
+    callback_url = os.environ.get("NOMBA_CHECKOUT_CALLBACK_URL")
+    if callback_url:
+        return callback_url.rstrip("/")
+
+    return f"{FRONTEND_URL}/payment-success"
 
 
 def _parse_expiry_timestamp(value: str | None) -> float:
@@ -192,54 +198,6 @@ def make_nomba_request(method: str, endpoint: str, payload: dict | None = None) 
         ) from error
 
 
-
-
-def create_virtual_account_for_school(sub_account_id: str | None, school_name: str) -> dict:
-    """
-    Create a persistent virtual account under the hackathon sub-account for a school.
-    This is the dedicated / persistent flavour: one account per customer/school, reused forever.
-    """
-    resolved_subaccount_id = sub_account_id or _get_hackathon_subaccount_id()
-    if not resolved_subaccount_id:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Nomba hackathon sub-account is not configured.",
-        )
-
-    endpoint = f"v1/accounts/virtual/{resolved_subaccount_id}"
-
-    safe_name = (school_name or "School").strip()
-    account_ref = f"va_{safe_name.lower().replace(' ', '_')[:20]}_{int(time.time())}"
-    if len(account_ref) < 16:
-        account_ref = f"{account_ref}_{int(time.time())}".replace("__", "_")
-
-    payload = {
-        "accountRef": account_ref[:64],
-        "accountName": safe_name,
-    }
-
-    logger.info("Requesting persistent virtual account for sub-account %s for school %s", resolved_subaccount_id, safe_name)
-
-    result = make_nomba_request(method="POST", endpoint=endpoint, payload=payload)
-
-    if isinstance(result, dict) and result.get("code") not in {None, "00", 0}:
-        description = result.get("description") or "Unknown virtual account error"
-        logger.error("Nomba virtual account creation failed: %s", description)
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Failed to create school virtual bank account: {description}",
-        )
-
-    if not isinstance(result, dict):
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="Unexpected response from Nomba while creating the virtual account.",
-        )
-
-    return result.get("data") or result
-
-
-
 def create_checkout_order(amount_kobo: int, order_ref: str, school_subaccount_id: str | None = None, customer_email: str | None = None) -> str:
     """
     Create an online checkout order with Nomba and return the generated checkout link.
@@ -257,7 +215,7 @@ def create_checkout_order(amount_kobo: int, order_ref: str, school_subaccount_id
     endpoint = "v1/checkout/order"
     amount_string = f"{(amount_kobo / 100):.2f}"
 
-    resolved_account_id = school_subaccount_id or _get_hackathon_subaccount_id()
+    resolved_account_id = school_subaccount_id or os.environ.get("NOMBA_HACKATHON_SUBACCOUNT")
     if not resolved_account_id:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -268,7 +226,7 @@ def create_checkout_order(amount_kobo: int, order_ref: str, school_subaccount_id
         "amount": amount_string,
         "currency": "NGN",
         "orderReference": order_ref,
-        "callbackUrl": "https://sileti.vercel.app/payment-success",
+        "callbackUrl": _resolve_checkout_callback_url(),
         "allowedPaymentMethods": ["Card", "Transfer"],
         "accountId": resolved_account_id,
     }
@@ -309,20 +267,38 @@ def create_checkout_order(amount_kobo: int, order_ref: str, school_subaccount_id
     return data["checkoutLink"]
 
 
-def verify_checkout_transaction(transaction_ref: str) -> dict:
+def verify_transaction_by_id(transaction_id: str) -> dict:
     """
-    Verify a checkout transaction with Nomba using only the transactionRef.
+    Verify a transaction using Nomba's transactionRef lookup path.
+    This is useful for webhook payloads that only expose the gateway transaction id.
+    """
+    if not transaction_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="transaction_id required")
 
-    Calls `GET /v1/transactions/accounts/single?transactionRef=...` and returns
-    the `data` block from Nomba. Raises HTTPException on errors.
-    """
-    if not transaction_ref:
+    endpoint = f"v1/transactions/accounts/single?transactionRef={transaction_id}"
+    result = make_nomba_request(method="GET", endpoint=endpoint)
+
+    data = result.get("data")
+    if not isinstance(data, dict):
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, 
-            detail="transaction_ref is required"
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Invalid response from Nomba while verifying transaction by id.",
         )
 
-    endpoint = f"v1/transactions/accounts/single?transactionRef={transaction_ref}"
+    return data
+
+
+def verify_checkout_transaction(order_reference: str) -> dict:
+    """
+    Verify a checkout transaction with Nomba using the `orderReference`.
+
+    Calls `GET /v1/transactions/accounts/single?orderReference=...` and returns
+    the `data` block from Nomba. Raises HTTPException on errors.
+    """
+    if not order_reference:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="order_reference required")
+
+    endpoint = f"v1/transactions/accounts/single?orderReference={order_reference}"
     result = make_nomba_request(method="GET", endpoint=endpoint)
 
     data = result.get("data")

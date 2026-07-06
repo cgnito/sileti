@@ -5,12 +5,13 @@ import csv
 from io import StringIO
 
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 from sqlalchemy import func
 
 import models
 import security
 import schemas
+import utils
 from database import get_db
 
 router = APIRouter(prefix="/students", tags=["Student Management"])
@@ -27,6 +28,36 @@ def get_next_serial(db: Session, org_id: UUID, year: int) -> int:
 
 def format_silete_id(short_code: str, year: int, serial: int) -> str:
     return f"{short_code}/{year}/{serial:04d}"
+
+
+def _sync_primary_parent(db: Session, student: models.Student, org_id: UUID, parent_phone: Optional[str]) -> None:
+    if not parent_phone:
+        return
+
+    normalized_phone = utils.normalize_phone_number(parent_phone)
+    if not normalized_phone:
+        return
+
+    parent = db.query(models.Parent).filter(
+        models.Parent.primary_phone == normalized_phone
+    ).first()
+
+    if not parent:
+        parent = models.Parent(
+            org_id=org_id,
+            primary_phone=normalized_phone,
+            is_verified=False,
+        )
+        db.add(parent)
+        db.flush()
+
+    student.parents = [parent]
+
+
+def _decorate_student_contact(student: models.Student) -> models.Student:
+    primary_parent = student.parents[0] if getattr(student, "parents", None) else None
+    student.parent_phone = primary_parent.primary_phone if primary_parent else None
+    return student
 
 
 # create a single student (access: admin, staff)
@@ -59,9 +90,15 @@ def create_single_student(
         date_of_birth=student_in.date_of_birth
     )
     db.add(new_student)
+    db.flush()
+    _sync_primary_parent(db, new_student, current_user.org_id, student_in.parent_phone)
     db.commit()
     db.refresh(new_student)
-    return new_student
+    new_student = db.query(models.Student).options(selectinload(models.Student.parents)).filter(
+        models.Student.id == new_student.id,
+        models.Student.org_id == current_user.org_id,
+    ).first()
+    return _decorate_student_contact(new_student)
 
 
 # bulk upload students from csv file (access: admin, staff)
@@ -89,27 +126,49 @@ def bulk_upload_students(
     content = file.file.read().decode('utf-8')
     reader = csv.DictReader(StringIO(content))
     students_to_add = []
-    
-    for row in reader:
-        if not row.get('first_name') or not row.get('last_name'):
-            continue
-        
-        readable_id = format_silete_id(short_code, year, current_serial)
-        new_student = models.Student(
-            org_id=current_user.org_id,
-            class_id=class_id,
-            silete_id=readable_id,
-            serial_number=current_serial,
-            admission_year=year,
-            first_name=row['first_name'],
-            last_name=row['last_name'],
-            date_of_birth=datetime.strptime(row['dob'], '%Y-%m-%d').date() if row.get('dob') else None
-        )
-        students_to_add.append(new_student)
-        current_serial += 1
 
-    db.add_all(students_to_add)
-    db.commit()
+    try:
+        for row in reader:
+            first_name = (row.get('first_name') or '').strip()
+            last_name = (row.get('last_name') or '').strip()
+            parent_phone = (row.get('parent_phone') or '').strip() or None
+            dob_value = (row.get('dob') or '').strip()
+            date_of_birth = None
+
+            if not first_name or not last_name:
+                continue
+
+            if dob_value:
+                try:
+                    date_of_birth = datetime.strptime(dob_value, '%Y-%m-%d').date()
+                except ValueError:
+                    date_of_birth = None
+
+            readable_id = format_silete_id(short_code, year, current_serial)
+            new_student = models.Student(
+                org_id=current_user.org_id,
+                class_id=class_id,
+                silete_id=readable_id,
+                serial_number=current_serial,
+                admission_year=year,
+                first_name=first_name,
+                last_name=last_name,
+                date_of_birth=date_of_birth
+            )
+            db.add(new_student)
+            db.flush()
+            _sync_primary_parent(db, new_student, current_user.org_id, parent_phone)
+            students_to_add.append(new_student)
+            current_serial += 1
+
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Failed to process bulk student upload: {str(exc)}"
+        ) from exc
+
     return {"message": f"Successfully admitted {len(students_to_add)} students to {school_class.name}"}
 
 
@@ -201,10 +260,10 @@ def list_all_students(
     db: Session = Depends(get_db),
     current_user: security.AuthContext = Depends(security.RoleChecker(["admin", "staff"]))
 ):
-    query = db.query(models.Student).filter(models.Student.org_id == current_user.org_id)
+    query = db.query(models.Student).options(selectinload(models.Student.parents)).filter(models.Student.org_id == current_user.org_id)
     if class_id:
         query = query.filter(models.Student.class_id == class_id)
-    return query.all()
+    return [_decorate_student_contact(student) for student in query.all()]
 
 
 # get single student profile (access: admin, staff)
@@ -217,10 +276,10 @@ def get_student(
     student = db.query(models.Student).filter(
         models.Student.id == student_id,
         models.Student.org_id == current_user.org_id
-    ).first()
+    ).options(selectinload(models.Student.parents)).first()
     if not student:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Student not found")
-    return student
+    return _decorate_student_contact(student)
 
 
 # update student records (access: admin, staff)
@@ -248,12 +307,20 @@ def update_student(
         if not new_class:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid class")
 
+    parent_phone = update_data.pop("parent_phone", None)
     for key, value in update_data.items():
         setattr(student, key, value)
 
+    if parent_phone is not None:
+        _sync_primary_parent(db, student, current_user.org_id, parent_phone)
+
     db.commit()
     db.refresh(student)
-    return student
+    student = db.query(models.Student).options(selectinload(models.Student.parents)).filter(
+        models.Student.id == student_id,
+        models.Student.org_id == current_user.org_id,
+    ).first()
+    return _decorate_student_contact(student)
 
 
 # delete student profile permanently (access: admin only)

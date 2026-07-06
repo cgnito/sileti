@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { type LucideIcon } from "lucide-react";
 import {
+  Bell,
   FileText,
   GraduationCap,
   Landmark,
@@ -37,7 +38,10 @@ type NavGroup = {
 const navGroups: NavGroup[] = [
   {
     title: "Overview",
-    items: [{ label: "Dashboard", href: "/dashboard", icon: LayoutDashboard }],
+    items: [
+      { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
+      { label: "Notifications", href: "/dashboard/notifications", icon: Bell },
+    ],
   },
   {
     title: "Setup",

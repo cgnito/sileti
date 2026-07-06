@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { ChevronLeft, CalendarDays, Hash, IdCard, PencilLine, School, User } from "lucide-react";
+import { ChevronLeft, CalendarDays, Hash, IdCard, Phone, PencilLine, School, User } from "lucide-react";
 import { apiClient } from "@/src/shared/api-client";
 import { DashboardEmptyState, DashboardHero, DashboardPageShell, DashboardPanel } from "@/src/components/dashboard/PageChrome";
 
@@ -18,6 +18,7 @@ type StudentDetail = {
   first_name: string;
   last_name: string;
   date_of_birth: string | null;
+  parent_phone: string | null;
   class_id: string | null;
   silete_id: string;
   org_id: string;
@@ -143,6 +144,14 @@ export default function StudentDetailPage() {
                   Class assignment
                 </div>
                 <p className="mt-2 text-base font-medium text-on-surface">{className}</p>
+              </div>
+
+              <div className="bg-white p-6 transition-colors hover:bg-surface-container-low/20">
+                <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.15em] text-on-surface-variant/70">
+                  <Phone className="h-3.5 w-3.5 text-primary/70" />
+                  Parent WhatsApp
+                </div>
+                <p className="mt-2 text-base font-medium text-on-surface">{student.parent_phone ?? "Not set"}</p>
               </div>
 
               <div className="bg-white p-6 transition-colors hover:bg-surface-container-low/20">

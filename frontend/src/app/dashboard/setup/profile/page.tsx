@@ -7,6 +7,7 @@ import { Button } from "@/src/components/shared/Button";
 import { apiClient } from "@/src/shared/api-client";
 import { fetchMySchool } from "@/src/features/auth/api/auth.api";
 import { useAuthStore } from "@/src/features/auth/store/useAuthStore";
+import { RequireRole } from "@/src/components/auth/RequireRole";
 import { DashboardHero, DashboardPageShell, DashboardPanel } from "@/src/components/dashboard/PageChrome";
 
 type SchoolProfile = {
@@ -79,6 +80,7 @@ export default function SchoolProfilePage() {
   }
 
   return (
+    <RequireRole>
     <DashboardPageShell className="max-w-5xl">
       <DashboardHero
         eyebrow="Setup"
@@ -149,5 +151,6 @@ export default function SchoolProfilePage() {
         )}
       </DashboardPanel>
     </DashboardPageShell>
+    </RequireRole>
   );
 }

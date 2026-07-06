@@ -1,7 +1,9 @@
 from uuid import UUID
 from datetime import datetime
+from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from sqlalchemy.orm import Session
+from sqlalchemy import or_, func
 import logging
 from decimal import Decimal
 
@@ -11,6 +13,7 @@ import utils
 import security
 from . import payments  
 from database import get_db
+from services import notifications
 
 logger = logging.getLogger(__name__)
 
@@ -330,6 +333,183 @@ def get_dashboard_metrics(
     }
 
 
+@router.get("/notifications", response_model=schemas.NotificationLogListResponse)
+def list_notification_logs(
+    query: Optional[str] = None,
+    status: Optional[str] = None,
+    event_type: Optional[str] = None,
+    limit: int = 25,
+    offset: int = 0,
+    current_admin: security.AuthContext = Depends(security.RoleChecker(["admin", "staff"])),
+    db: Session = Depends(get_db),
+):
+    """
+    Returns a paginated audit trail of outbound notification attempts for the current organization.
+    """
+    limit = max(1, min(limit, 100))
+    offset = max(0, offset)
+
+    base_query = db.query(models.NotificationLog).filter(models.NotificationLog.org_id == current_admin.org_id)
+
+    if status:
+        base_query = base_query.filter(models.NotificationLog.status == status.lower())
+    if event_type:
+        base_query = base_query.filter(models.NotificationLog.event_type == event_type.lower())
+    if query:
+        search = f"%{query.strip().lower()}%"
+        base_query = base_query.outerjoin(models.Student, models.Student.id == models.NotificationLog.student_id).outerjoin(
+            models.Invoice, models.Invoice.id == models.NotificationLog.invoice_id
+        ).outerjoin(
+            models.SchoolClass, models.SchoolClass.id == models.Student.class_id
+        ).filter(
+            or_(
+                models.NotificationLog.recipient_phone.ilike(search),
+                models.NotificationLog.message_sid.ilike(search),
+                models.NotificationLog.event_type.ilike(search),
+                models.NotificationLog.status.ilike(search),
+                models.Student.first_name.ilike(search),
+                models.Student.last_name.ilike(search),
+                models.Student.silete_id.ilike(search),
+                models.SchoolClass.name.ilike(search),
+                models.Invoice.session.ilike(search),
+                models.Invoice.term.ilike(search),
+            )
+        )
+
+    total = base_query.count()
+    summary_rows = db.query(
+        models.NotificationLog.status,
+        func.count(models.NotificationLog.status),
+    ).filter(
+        models.NotificationLog.org_id == current_admin.org_id
+    )
+    if status:
+        summary_rows = summary_rows.filter(models.NotificationLog.status == status.lower())
+    if event_type:
+        summary_rows = summary_rows.filter(models.NotificationLog.event_type == event_type.lower())
+    if query:
+        search = f"%{query.strip().lower()}%"
+        summary_rows = summary_rows.outerjoin(models.Student, models.Student.id == models.NotificationLog.student_id).outerjoin(
+            models.Invoice, models.Invoice.id == models.NotificationLog.invoice_id
+        ).outerjoin(
+            models.SchoolClass, models.SchoolClass.id == models.Student.class_id
+        ).filter(
+            or_(
+                models.NotificationLog.recipient_phone.ilike(search),
+                models.NotificationLog.message_sid.ilike(search),
+                models.NotificationLog.event_type.ilike(search),
+                models.NotificationLog.status.ilike(search),
+                models.Student.first_name.ilike(search),
+                models.Student.last_name.ilike(search),
+                models.Student.silete_id.ilike(search),
+                models.SchoolClass.name.ilike(search),
+                models.Invoice.session.ilike(search),
+                models.Invoice.term.ilike(search),
+            )
+        )
+    summary = {key: 0 for key in ["sent", "failed", "skipped"]}
+    for status_value, count in summary_rows.group_by(models.NotificationLog.status).all():
+        summary[status_value] = int(count)
+    summary["total"] = int(total)
+
+    logs = base_query.order_by(models.NotificationLog.created_at.desc()).offset(offset).limit(limit).all()
+
+    items = []
+    for log in logs:
+        student = db.query(models.Student).filter(models.Student.id == log.student_id).first() if log.student_id else None
+        school_class = db.query(models.SchoolClass).filter(models.SchoolClass.id == student.class_id).first() if student and student.class_id else None
+        invoice = db.query(models.Invoice).filter(models.Invoice.id == log.invoice_id).first() if log.invoice_id else None
+
+        items.append(
+            {
+                "id": log.id,
+                "idempotency_key": log.idempotency_key,
+                "org_id": log.org_id,
+                "student_id": log.student_id,
+                "invoice_id": log.invoice_id,
+                "channel": log.channel,
+                "event_type": log.event_type,
+                "recipient_phone": log.recipient_phone,
+                "message_sid": log.message_sid,
+                "status": log.status,
+                "error_message": log.error_message,
+                "created_at": log.created_at,
+                "student_name": f"{student.first_name} {student.last_name}" if student else None,
+                "class_name": school_class.name if school_class else None,
+                "invoice": (
+                    {
+                        "id": invoice.id,
+                        "session": invoice.session,
+                        "term": invoice.term,
+                        "total_amount": invoice.total_amount,
+                        "paid_amount": invoice.paid_amount,
+                        "status": invoice.status.value if hasattr(invoice.status, "value") else invoice.status,
+                    }
+                    if invoice
+                    else None
+                ),
+            }
+        )
+
+    return {"items": items, "total": total, "limit": limit, "offset": offset, "summary": summary}
+
+
+@router.post("/notifications/{notification_id}/resend", response_model=schemas.NotificationLogResponse)
+def resend_notification(
+    notification_id: UUID,
+    current_admin: security.AuthContext = Depends(security.RoleChecker(["admin", "staff"])),
+    db: Session = Depends(get_db),
+):
+    notification = db.query(models.NotificationLog).filter(
+        models.NotificationLog.id == notification_id,
+        models.NotificationLog.org_id == current_admin.org_id,
+    ).first()
+
+    if not notification:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Notification record not found")
+
+    if notification.status == "sent":
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="This notification has already been sent.")
+
+    try:
+        updated = notifications.resend_notification_attempt(db, notification.id, current_admin.org_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    student = db.query(models.Student).filter(models.Student.id == updated.student_id).first() if updated.student_id else None
+    school_class = db.query(models.SchoolClass).filter(models.SchoolClass.id == student.class_id).first() if student and student.class_id else None
+    invoice = db.query(models.Invoice).filter(models.Invoice.id == updated.invoice_id).first() if updated.invoice_id else None
+
+    return {
+        "id": updated.id,
+        "idempotency_key": updated.idempotency_key,
+        "org_id": updated.org_id,
+        "student_id": updated.student_id,
+        "invoice_id": updated.invoice_id,
+        "channel": updated.channel,
+        "event_type": updated.event_type,
+        "recipient_phone": updated.recipient_phone,
+        "message_sid": updated.message_sid,
+        "status": updated.status,
+        "error_message": updated.error_message,
+        "created_at": updated.created_at,
+        "student_name": f"{student.first_name} {student.last_name}" if student else None,
+        "class_name": school_class.name if school_class else None,
+        "invoice": (
+            {
+                "id": invoice.id,
+                "session": invoice.session,
+                "term": invoice.term,
+                "total_amount": invoice.total_amount,
+                "paid_amount": invoice.paid_amount,
+                "status": invoice.status.value if hasattr(invoice.status, "value") else invoice.status,
+            }
+            if invoice
+            else None
+        ),
+    }
+
+
 # get supported banks and perform account lookups via nomba api
 @router.get("/banks", status_code=status.HTTP_200_OK)
 def get_supported_banks(
@@ -413,8 +593,7 @@ def submit_bank_settlement(
     db: Session = Depends(get_db)
 ):
     """
-    Submit the bank settlement details for the current school, create a persistent
-    Nomba virtual account under the hackathon sub-account, and persist the result.
+    Submit the bank settlement details for the current school and persist the result.
     """
     org = current_admin.organization
     if not org:
@@ -427,28 +606,10 @@ def submit_bank_settlement(
         settlement = models.BankSettlement(org_id=org.id)
         db.add(settlement)
 
-    try:
-        virtual_account = payments.create_virtual_account_for_school(
-            sub_account_id=None,
-            school_name=org.school_name,
-        )
-    except HTTPException:
-        raise
-    except Exception as error:
-        logger.error("failed to create virtual account for school %s: %s", org.school_name, error)
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="could not create the school virtual account at this time."
-        ) from error
-
     settlement.bank_name = bank_input.bank_name
     settlement.bank_code = bank_input.bank_code
     settlement.account_number = bank_input.account_number
     settlement.account_name = bank_input.account_name
-    settlement.nomba_virtual_account_ref = virtual_account.get("accountRef")
-    settlement.nomba_virtual_account_number = virtual_account.get("bankAccountNumber")
-    settlement.nomba_virtual_account_name = virtual_account.get("accountName")
-    settlement.nomba_virtual_account_bank_name = virtual_account.get("bankName")
 
     org.has_setup_bank = True
 

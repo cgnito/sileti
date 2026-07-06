@@ -19,6 +19,7 @@ type StudentDetail = {
   first_name: string;
   last_name: string;
   date_of_birth: string | null;
+  parent_phone: string | null;
   class_id: string | null;
   silete_id: string;
   status: string;
@@ -33,6 +34,7 @@ export default function StudentEditPage() {
   const [classes, setClasses] = useState<SchoolClass[]>([]);
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
+  const [parentPhone, setParentPhone] = useState("");
   const [dateOfBirth, setDateOfBirth] = useState("");
   const [classId, setClassId] = useState("");
   const [isLoading, setIsLoading] = useState(true);
@@ -58,6 +60,7 @@ export default function StudentEditPage() {
         setClasses(classData);
         setFirstName(studentData.first_name);
         setLastName(studentData.last_name);
+        setParentPhone(studentData.parent_phone ?? "");
         setDateOfBirth(studentData.date_of_birth ?? "");
         setClassId(studentData.class_id ?? classData[0]?.id ?? "");
       } catch (err) {
@@ -91,6 +94,7 @@ export default function StudentEditPage() {
         first_name: firstName.trim(),
         last_name: lastName.trim(),
         date_of_birth: dateOfBirth || null,
+        parent_phone: parentPhone.trim() || null,
         class_id: classId || null,
       });
       setSuccess("Student updated successfully.");
@@ -138,6 +142,15 @@ export default function StudentEditPage() {
               <label className="space-y-2 text-sm text-on-surface-variant">
                 <span className="block font-medium text-on-surface">Date of birth</span>
                 <input type="date" value={dateOfBirth} onChange={(event) => setDateOfBirth(event.target.value)} className="w-full rounded-lg border border-border bg-white px-3 py-2.5 text-sm text-on-surface outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/20" />
+              </label>
+              <label className="space-y-2 text-sm text-on-surface-variant">
+                <span className="block font-medium text-on-surface">Parent WhatsApp number</span>
+                <input
+                  value={parentPhone}
+                  onChange={(event) => setParentPhone(event.target.value)}
+                  placeholder="+2348012345678"
+                  className="w-full rounded-lg border border-border bg-white px-3 py-2.5 text-sm text-on-surface outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/20"
+                />
               </label>
               <label className="space-y-2 text-sm text-on-surface-variant">
                 <span className="block font-medium text-on-surface">Class</span>

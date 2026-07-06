@@ -32,6 +32,7 @@ export default function StudentsSetupPage() {
   const [students, setStudents] = useState<StudentRecord[]>([]);
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
+  const [parentPhone, setParentPhone] = useState("");
   const [dateOfBirth, setDateOfBirth] = useState("");
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [search, setSearch] = useState("");
@@ -95,10 +96,12 @@ export default function StudentsSetupPage() {
         first_name: firstName.trim(),
         last_name: lastName.trim(),
         date_of_birth: dateOfBirth || null,
+        parent_phone: parentPhone.trim() || null,
         class_id: createClassId,
       });
       setFirstName("");
       setLastName("");
+      setParentPhone("");
       setDateOfBirth("");
       await loadStudents(listClassId || undefined);
       setSuccess("Student created successfully.");
@@ -199,12 +202,12 @@ export default function StudentsSetupPage() {
           </div>
 
           <div className="grid gap-4 md:grid-cols-2">
-          <label className="space-y-2 text-sm text-on-surface-variant md:col-span-2">
-            <span className="block font-medium text-on-surface">Select class</span>
-            <select id="student-class" value={createClassId} onChange={(event) => setCreateClassId(event.target.value)} className="w-full rounded-lg border border-border bg-white px-3 py-2.5 text-sm text-on-surface outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/20">
-              {isLoadingClasses ? <option value="">Loading classes…</option> : classes.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-            </select>
-          </label>
+            <label className="space-y-2 text-sm text-on-surface-variant md:col-span-2">
+              <span className="block font-medium text-on-surface">Select class</span>
+              <select id="student-class" value={createClassId} onChange={(event) => setCreateClassId(event.target.value)} className="w-full rounded-lg border border-border bg-white px-3 py-2.5 text-sm text-on-surface outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/20">
+                {isLoadingClasses ? <option value="">Loading classes…</option> : classes.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+              </select>
+            </label>
             <label className="space-y-2 text-sm text-on-surface-variant">
               <span className="block font-medium text-on-surface">First name</span>
               <input id="student-first-name" value={firstName} onChange={(event) => setFirstName(event.target.value)} className="w-full rounded-lg border border-border bg-white px-3 py-2.5 text-sm text-on-surface outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/20" />
@@ -212,6 +215,17 @@ export default function StudentsSetupPage() {
             <label className="space-y-2 text-sm text-on-surface-variant">
               <span className="block font-medium text-on-surface">Last name</span>
               <input id="student-last-name" value={lastName} onChange={(event) => setLastName(event.target.value)} className="w-full rounded-lg border border-border bg-white px-3 py-2.5 text-sm text-on-surface outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/20" />
+            </label>
+            <label className="space-y-2 text-sm text-on-surface-variant md:col-span-2">
+              <span className="block font-medium text-on-surface">Parent WhatsApp number</span>
+              <input
+                id="student-parent-phone"
+                value={parentPhone}
+                onChange={(event) => setParentPhone(event.target.value)}
+                placeholder="+2348012345678"
+                className="w-full rounded-lg border border-border bg-white px-3 py-2.5 text-sm text-on-surface outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/20"
+              />
+              <p className="text-xs text-on-surface-variant">This number will be used for invoice and payment notifications.</p>
             </label>
             <label className="space-y-2 text-sm text-on-surface-variant md:col-span-2">
               <span className="block font-medium text-on-surface">Date of birth</span>

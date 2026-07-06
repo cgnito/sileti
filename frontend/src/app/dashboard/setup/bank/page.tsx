@@ -7,6 +7,7 @@ import { AlertCircle, ChevronLeft, Landmark, Search, ShieldCheck } from "lucide-
 import { Button } from "@/src/components/shared/Button";
 import { apiClient } from "@/src/shared/api-client";
 import { fetchOnboardingStatus } from "@/src/features/auth/api/auth.api";
+import { RequireRole } from "@/src/components/auth/RequireRole";
 import { DashboardHero, DashboardPageShell, DashboardPanel } from "@/src/components/dashboard/PageChrome";
 
 type BankOption = {
@@ -27,7 +28,6 @@ type BankSettlementResponse = {
   bank_code?: string | null;
   account_number: string;
   account_name: string;
-  nomba_subaccount_id: string | null;
 };
 
 export default function BankSetupPage() {
@@ -173,6 +173,7 @@ export default function BankSetupPage() {
   }
 
   return (
+    <RequireRole>
     <DashboardPageShell className="max-w-5xl">
       <DashboardHero
         eyebrow="Setup"
@@ -259,5 +260,6 @@ export default function BankSetupPage() {
         </div>
       </DashboardPanel>
     </DashboardPageShell>
+    </RequireRole>
   );
 }
