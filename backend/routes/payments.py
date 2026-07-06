@@ -21,6 +21,8 @@ _token_cache = {
 def _normalize_base_url() -> str:
     return os.environ.get("NOMBA_BASE_URL", "https://sandbox.nomba.com").rstrip("/")
 
+def _get_hackathon_subaccount_id() -> str | None:
+    return os.environ.get("NOMBA_HACKATHON_SUBACCOUNT")
 
 def _resolve_checkout_callback_url() -> str:
     """
@@ -215,7 +217,7 @@ def create_checkout_order(amount_kobo: int, order_ref: str, school_subaccount_id
     endpoint = "v1/checkout/order"
     amount_string = f"{(amount_kobo / 100):.2f}"
 
-    resolved_account_id = school_subaccount_id or os.environ.get("NOMBA_HACKATHON_SUBACCOUNT")
+    resolved_account_id = school_subaccount_id or _get_hackathon_subaccount_id()
     if not resolved_account_id:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

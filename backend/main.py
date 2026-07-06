@@ -9,7 +9,7 @@ from routes import (
     classes_router,
     students_router,
     webhooks_router,
-    # whatsapp_router
+    whatsapp_router,    
     # payments_router  
 )
 
@@ -42,8 +42,7 @@ app.include_router(billing_router)
 app.include_router(classes_router)
 app.include_router(students_router)
 app.include_router(webhooks_router)
-# Legacy inbound WhatsApp assistant intentionally left out of the active app.
-# app.include_router(whatsapp_router)
+app.include_router(whatsapp_router)
 # app.include_router(payments_router)
 
 
