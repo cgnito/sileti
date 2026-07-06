@@ -36,14 +36,20 @@ function formatAmount(value: string, scaleToNaira = false) {
   }).format(numeric);
 }
 
-export default function PaymentSuccessPage({ searchParams }: { searchParams?: SearchParams }) {
-  const amount = searchParams?.amount_kobo
-    ? formatAmount(firstValue(searchParams.amount_kobo), true)
-    : formatAmount(firstValue(searchParams?.amount ?? searchParams?.amountPaid));
-  const studentName = firstValue(searchParams?.studentName ?? searchParams?.student_name);
-  const schoolName = firstValue(searchParams?.schoolName ?? searchParams?.school_name);
-  const className = firstValue(searchParams?.className ?? searchParams?.class_name);
-  const reference = firstValue(searchParams?.reference ?? searchParams?.orderReference ?? searchParams?.merchantTxRef);
+export default async function PaymentSuccessPage({
+  searchParams,
+}: {
+  searchParams?: Promise<SearchParams>;
+}) {
+  const resolvedSearchParams = (await searchParams) ?? {};
+
+  const amount = resolvedSearchParams.amount_kobo
+    ? formatAmount(firstValue(resolvedSearchParams.amount_kobo), true)
+    : formatAmount(firstValue(resolvedSearchParams.amount ?? resolvedSearchParams.amountPaid));
+  const studentName = firstValue(resolvedSearchParams.studentName ?? resolvedSearchParams.student_name);
+  const schoolName = firstValue(resolvedSearchParams.schoolName ?? resolvedSearchParams.school_name);
+  const className = firstValue(resolvedSearchParams.className ?? resolvedSearchParams.class_name);
+  const reference = firstValue(resolvedSearchParams.reference ?? resolvedSearchParams.orderReference ?? resolvedSearchParams.merchantTxRef);
   const statusLabel = amount === "Not provided" ? "Checkout completed" : "Payment recorded";
 
   return (
