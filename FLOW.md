@@ -46,6 +46,7 @@ This file describes the current product flow as implemented in the codebase afte
 - Student detail pages exist instead of relying on inline editing.
 - Student edit screens are separate pages.
 - The student record now supports parent contact details so WhatsApp notifications can be sent reliably.
+- The student record also supports parent email so invoice and payment notifications can be emailed.
 - The frontend no longer treats class selection in the create-student area as a list filter.
 
 ## Fee Template Flow
@@ -77,9 +78,11 @@ This file describes the current product flow as implemented in the codebase afte
 
 ## Notification Flow
 
-- Parent WhatsApp numbers are stored with students.
-- When an invoice is generated, an outbound WhatsApp notification can be sent to the parent.
-- When a payment is confirmed, a payment notification can be sent to the parent.
+- Parent email addresses are stored with students.
+- When an invoice is generated, an outbound email notification is sent to the parent.
+- The invoice email is a call to action, not the payment link itself.
+- The email tells the parent to continue in WhatsApp and paste the student ID when they are ready to pay.
+- When a payment is confirmed, a payment notification is sent to the parent by email.
 - Notification logs are stored in the database.
 - Notification history can be viewed in the frontend.
 - Failed notification sends can be resent from the notification history page.
@@ -88,9 +91,9 @@ This file describes the current product flow as implemented in the codebase afte
 ## WhatsApp Flow
 
 - The legacy inbound WhatsApp assistant route is not active.
-- The app now uses outbound WhatsApp notifications instead of a chatbot-style assistant flow.
-- Twilio sends the notifications from the backend.
-- If Twilio is not configured, the notification records can still be stored, but live delivery will fail gracefully.
+- The app uses the inbound chatbot as the follow-up payment assistant.
+- Parents receive email notifications telling them to continue the flow in the chatbot when they are ready.
+- Twilio can still be used for legacy resend support, but it is no longer the primary notification path.
 
 ## Staff Flow
 
@@ -133,4 +136,3 @@ This file describes the current product flow as implemented in the codebase afte
 - Reconcile payment status.
 - Notify parents.
 - Track notification and payment history.
-

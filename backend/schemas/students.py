@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, EmailStr, Field, field_validator
 from datetime import date
 from typing import Optional
 from uuid import UUID
@@ -9,6 +9,7 @@ class StudentBase(BaseModel):
     last_name: str = Field(..., min_length=2, max_length=100)
     date_of_birth: Optional[date] = None
     parent_phone: Optional[str] = Field(None, max_length=32)
+    parent_email: Optional[EmailStr] = None
 
     @field_validator('first_name', 'last_name')
     @classmethod
@@ -20,6 +21,11 @@ class StudentBase(BaseModel):
     def clean_parent_phone(cls, v: Optional[str]) -> Optional[str]:
         return utils.normalize_phone_number(v)
 
+    @field_validator("parent_email")
+    @classmethod
+    def clean_parent_email(cls, v: Optional[str]) -> Optional[str]:
+        return utils.sanitize_email(v) if v else v
+
 class StudentCreate(StudentBase):
     class_id: UUID
 
@@ -29,6 +35,7 @@ class StudentUpdate(BaseModel):
     date_of_birth: Optional[date] = None
     class_id: Optional[UUID] = None
     parent_phone: Optional[str] = Field(None, max_length=32)
+    parent_email: Optional[EmailStr] = None
 
     @field_validator('first_name', 'last_name')
     @classmethod
@@ -41,6 +48,11 @@ class StudentUpdate(BaseModel):
     @classmethod
     def clean_parent_phone(cls, v: Optional[str]) -> Optional[str]:
         return utils.normalize_phone_number(v)
+
+    @field_validator("parent_email")
+    @classmethod
+    def clean_parent_email(cls, v: Optional[str]) -> Optional[str]:
+        return utils.sanitize_email(v) if v else v
 
 class StudentResponse(StudentBase):
     id: UUID

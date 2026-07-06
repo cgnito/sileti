@@ -176,7 +176,7 @@ export default function BillingListPage() {
                       <p className="truncate font-medium text-on-surface">
                         {invoice.student?.first_name && invoice.student?.last_name
                           ? `${invoice.student.first_name} ${invoice.student.last_name}`
-                          : "Student record"}
+                          : invoice.student?.silete_id ?? "Unknown student"}
                       </p>
                       <p className="truncate text-xs text-on-surface-variant">{invoice.session} · {invoice.term}</p>
                     </div>

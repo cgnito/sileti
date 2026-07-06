@@ -128,6 +128,7 @@ def generate_invoices(
         invoice = models.Invoice(
             org_id=current_user.org_id,
             student_id=student.id,
+            template_id=request.template_id,
             session=request.session,
             term=request.term,
             total_amount=total_amount,
@@ -252,9 +253,26 @@ def append_optional_fee_to_invoice(
     if invoice.status == models.InvoiceStatus.VOIDED:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot mutate a voided invoice statement.")
 
-    target_item = db.query(models.FeeLineItem).filter(models.FeeLineItem.id == payload.fee_line_item_id).first()
+    target_item = db.query(models.FeeLineItem).options(
+        joinedload(models.FeeLineItem.template)
+    ).filter(models.FeeLineItem.id == payload.fee_line_item_id).first()
     if not target_item:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Fee configuration item not found")
+
+    if not target_item.template or target_item.template.org_id != current_user.org_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Fee configuration item not found")
+
+    if target_item.is_compulsory:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Only optional fee items can be added to an invoice."
+        )
+
+    if invoice.template_id and target_item.template_id != invoice.template_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This fee does not belong to the invoice template used for this bill."
+        )
 
     # Guard against duplicate billing line entries
     for existing_item in invoice.items:

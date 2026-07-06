@@ -69,7 +69,6 @@ class BankSettlement(Base):
 
 class UserRole(str, enum.Enum):
     STAFF = "staff"
-    BURSAR = "bursar"
 
 
 class User(Base):
@@ -191,6 +190,7 @@ class Invoice(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     org_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=False)
     student_id = Column(UUID(as_uuid=True), ForeignKey("students.id"), nullable=False)
+    template_id = Column(UUID(as_uuid=True), ForeignKey("fee_templates.id"), nullable=True)
     
     session = Column(String(20), nullable=False)  # e.g., "2025/2026"
     term = Column(String(20), nullable=False)     # e.g., "First Term"
@@ -203,6 +203,7 @@ class Invoice(Base):
 
     # relationships
     student = relationship("Student")
+    template = relationship("FeeTemplate")
     items = relationship("InvoiceDetail", back_populates="invoice", cascade="all, delete-orphan")
     transactions = relationship("Transaction", back_populates="invoice", cascade="all, delete-orphan")
     ledger_entries = relationship("PaymentLedger", back_populates="invoice", cascade="all, delete-orphan")
@@ -308,7 +309,8 @@ class NotificationLog(Base):
 
     channel = Column(String(30), nullable=False, default="whatsapp")
     event_type = Column(String(50), nullable=False)
-    recipient_phone = Column(String(20), nullable=False)
+    recipient_phone = Column(String(20), nullable=True)
+    recipient_email = Column(String(255), nullable=True)
     message_sid = Column(String(100), nullable=True)
     status = Column(String(20), nullable=False, default="queued")
     error_message = Column(String(255), nullable=True)

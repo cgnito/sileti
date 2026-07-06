@@ -143,6 +143,7 @@ class NombaAuthTests(unittest.TestCase):
         self.assertEqual(result, "https://checkout.nomba/link")
         payload = mock_make_request.call_args.kwargs["payload"]
         self.assertEqual(payload["order"]["callbackUrl"], "https://frontend.example.com/payment-success")
+        self.assertEqual(payload["order"]["merchantTxRef"], "SIL-ORDER-123")
 
 
 if __name__ == "__main__":

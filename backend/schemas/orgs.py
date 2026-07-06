@@ -212,7 +212,8 @@ class NotificationLogResponse(BaseModel):
     invoice_id: Optional[UUID] = None
     channel: str
     event_type: str
-    recipient_phone: str
+    recipient_phone: Optional[str] = None
+    recipient_email: Optional[str] = None
     message_sid: Optional[str] = None
     status: str
     error_message: Optional[str] = None

@@ -246,6 +246,11 @@ def get_dashboard_metrics(
     fee_templates_count = db.query(models.FeeTemplate).filter(models.FeeTemplate.org_id == org_id).count()
 
     invoices = db.query(models.Invoice).filter(models.Invoice.org_id == org_id).all()
+    successful_payments = db.query(models.PaymentLedger).filter(
+        models.PaymentLedger.org_id == org_id,
+        models.PaymentLedger.status == models.PaymentLedgerStatus.SUCCESS.value,
+        models.PaymentLedger.amount.isnot(None),
+    ).all()
 
     summary_counts = {
         "paid": 0,
@@ -294,9 +299,14 @@ def get_dashboard_metrics(
                 bucket = bucket_map.get(invoice.created_at.strftime("%Y-%m"))
                 if bucket:
                     bucket["billed"] = bucket["billed"] + invoice.total_amount
-                    bucket["collected"] = bucket["collected"] + invoice.paid_amount
-
-        total_collected += invoice.paid_amount
+    
+    for payment in successful_payments:
+        amount = payment.amount or Decimal("0.00")
+        total_collected += amount
+        if payment.created_at:
+            bucket = bucket_map.get(payment.created_at.strftime("%Y-%m"))
+            if bucket:
+                bucket["collected"] = bucket["collected"] + amount
 
     total_outstanding = max(total_income - total_collected, Decimal("0.00"))
     collection_rate_pct = float((total_collected / total_income * Decimal("100")) if total_income > 0 else Decimal("0.00"))
@@ -338,6 +348,7 @@ def list_notification_logs(
     query: Optional[str] = None,
     status: Optional[str] = None,
     event_type: Optional[str] = None,
+    channel: Optional[str] = None,
     limit: int = 25,
     offset: int = 0,
     current_admin: security.AuthContext = Depends(security.RoleChecker(["admin", "staff"])),
@@ -355,6 +366,8 @@ def list_notification_logs(
         base_query = base_query.filter(models.NotificationLog.status == status.lower())
     if event_type:
         base_query = base_query.filter(models.NotificationLog.event_type == event_type.lower())
+    if channel:
+        base_query = base_query.filter(models.NotificationLog.channel == channel.lower())
     if query:
         search = f"%{query.strip().lower()}%"
         base_query = base_query.outerjoin(models.Student, models.Student.id == models.NotificationLog.student_id).outerjoin(
@@ -364,6 +377,7 @@ def list_notification_logs(
         ).filter(
             or_(
                 models.NotificationLog.recipient_phone.ilike(search),
+                models.NotificationLog.recipient_email.ilike(search),
                 models.NotificationLog.message_sid.ilike(search),
                 models.NotificationLog.event_type.ilike(search),
                 models.NotificationLog.status.ilike(search),
@@ -387,6 +401,8 @@ def list_notification_logs(
         summary_rows = summary_rows.filter(models.NotificationLog.status == status.lower())
     if event_type:
         summary_rows = summary_rows.filter(models.NotificationLog.event_type == event_type.lower())
+    if channel:
+        summary_rows = summary_rows.filter(models.NotificationLog.channel == channel.lower())
     if query:
         search = f"%{query.strip().lower()}%"
         summary_rows = summary_rows.outerjoin(models.Student, models.Student.id == models.NotificationLog.student_id).outerjoin(
@@ -396,6 +412,7 @@ def list_notification_logs(
         ).filter(
             or_(
                 models.NotificationLog.recipient_phone.ilike(search),
+                models.NotificationLog.recipient_email.ilike(search),
                 models.NotificationLog.message_sid.ilike(search),
                 models.NotificationLog.event_type.ilike(search),
                 models.NotificationLog.status.ilike(search),
@@ -430,6 +447,7 @@ def list_notification_logs(
                 "channel": log.channel,
                 "event_type": log.event_type,
                 "recipient_phone": log.recipient_phone,
+                "recipient_email": log.recipient_email,
                 "message_sid": log.message_sid,
                 "status": log.status,
                 "error_message": log.error_message,
@@ -489,6 +507,7 @@ def resend_notification(
         "channel": updated.channel,
         "event_type": updated.event_type,
         "recipient_phone": updated.recipient_phone,
+        "recipient_email": updated.recipient_email,
         "message_sid": updated.message_sid,
         "status": updated.status,
         "error_message": updated.error_message,

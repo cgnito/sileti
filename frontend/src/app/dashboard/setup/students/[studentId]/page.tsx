@@ -19,6 +19,7 @@ type StudentDetail = {
   last_name: string;
   date_of_birth: string | null;
   parent_phone: string | null;
+  parent_email: string | null;
   class_id: string | null;
   silete_id: string;
   org_id: string;
@@ -152,6 +153,14 @@ export default function StudentDetailPage() {
                   Parent WhatsApp
                 </div>
                 <p className="mt-2 text-base font-medium text-on-surface">{student.parent_phone ?? "Not set"}</p>
+              </div>
+
+              <div className="bg-white p-6 transition-colors hover:bg-surface-container-low/20">
+                <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.15em] text-on-surface-variant/70">
+                  <User className="h-3.5 w-3.5 text-primary/70" />
+                  Parent email
+                </div>
+                <p className="mt-2 text-base font-medium text-on-surface">{student.parent_email ?? "Not set"}</p>
               </div>
 
               <div className="bg-white p-6 transition-colors hover:bg-surface-container-low/20">

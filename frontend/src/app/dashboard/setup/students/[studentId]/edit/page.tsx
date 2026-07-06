@@ -20,6 +20,7 @@ type StudentDetail = {
   last_name: string;
   date_of_birth: string | null;
   parent_phone: string | null;
+  parent_email: string | null;
   class_id: string | null;
   silete_id: string;
   status: string;
@@ -35,6 +36,7 @@ export default function StudentEditPage() {
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [parentPhone, setParentPhone] = useState("");
+  const [parentEmail, setParentEmail] = useState("");
   const [dateOfBirth, setDateOfBirth] = useState("");
   const [classId, setClassId] = useState("");
   const [isLoading, setIsLoading] = useState(true);
@@ -61,6 +63,7 @@ export default function StudentEditPage() {
         setFirstName(studentData.first_name);
         setLastName(studentData.last_name);
         setParentPhone(studentData.parent_phone ?? "");
+        setParentEmail(studentData.parent_email ?? "");
         setDateOfBirth(studentData.date_of_birth ?? "");
         setClassId(studentData.class_id ?? classData[0]?.id ?? "");
       } catch (err) {
@@ -95,6 +98,7 @@ export default function StudentEditPage() {
         last_name: lastName.trim(),
         date_of_birth: dateOfBirth || null,
         parent_phone: parentPhone.trim() || null,
+        parent_email: parentEmail.trim() || null,
         class_id: classId || null,
       });
       setSuccess("Student updated successfully.");
@@ -149,6 +153,16 @@ export default function StudentEditPage() {
                   value={parentPhone}
                   onChange={(event) => setParentPhone(event.target.value)}
                   placeholder="+2348012345678"
+                  className="w-full rounded-lg border border-border bg-white px-3 py-2.5 text-sm text-on-surface outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/20"
+                />
+              </label>
+              <label className="space-y-2 text-sm text-on-surface-variant">
+                <span className="block font-medium text-on-surface">Parent email</span>
+                <input
+                  type="email"
+                  value={parentEmail}
+                  onChange={(event) => setParentEmail(event.target.value)}
+                  placeholder="parent@example.com"
                   className="w-full rounded-lg border border-border bg-white px-3 py-2.5 text-sm text-on-surface outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/20"
                 />
               </label>

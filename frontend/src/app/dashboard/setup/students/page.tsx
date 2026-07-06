@@ -21,6 +21,7 @@ type StudentRecord = {
   date_of_birth: string | null;
   class_id: string | null;
   silete_id: string;
+  parent_email: string | null;
 };
 
 export default function StudentsSetupPage() {
@@ -33,6 +34,7 @@ export default function StudentsSetupPage() {
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [parentPhone, setParentPhone] = useState("");
+  const [parentEmail, setParentEmail] = useState("");
   const [dateOfBirth, setDateOfBirth] = useState("");
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [search, setSearch] = useState("");
@@ -97,11 +99,13 @@ export default function StudentsSetupPage() {
         last_name: lastName.trim(),
         date_of_birth: dateOfBirth || null,
         parent_phone: parentPhone.trim() || null,
+        parent_email: parentEmail.trim() || null,
         class_id: createClassId,
       });
       setFirstName("");
       setLastName("");
       setParentPhone("");
+      setParentEmail("");
       setDateOfBirth("");
       await loadStudents(listClassId || undefined);
       setSuccess("Student created successfully.");
@@ -228,9 +232,22 @@ export default function StudentsSetupPage() {
               <p className="text-xs text-on-surface-variant">This number will be used for invoice and payment notifications.</p>
             </label>
             <label className="space-y-2 text-sm text-on-surface-variant md:col-span-2">
+              <span className="block font-medium text-on-surface">Parent email</span>
+              <input
+                id="student-parent-email"
+                type="email"
+                value={parentEmail}
+                onChange={(event) => setParentEmail(event.target.value)}
+                placeholder="parent@example.com"
+                className="w-full rounded-lg border border-border bg-white px-3 py-2.5 text-sm text-on-surface outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/20"
+              />
+              <p className="text-xs text-on-surface-variant">This email will receive invoice and payment updates.</p>
+            </label>
+            <label className="space-y-2 text-sm text-on-surface-variant md:col-span-2">
               <span className="block font-medium text-on-surface">Date of birth</span>
               <input id="student-dob" type="date" value={dateOfBirth} onChange={(event) => setDateOfBirth(event.target.value)} className="w-full rounded-lg border border-border bg-white px-3 py-2.5 text-sm text-on-surface outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/20" />
             </label>
+            <p className="text-xs text-on-surface-variant md:col-span-2">CSV uploads can include `parent_phone` and `parent_email` columns for notification delivery.</p>
           </div>
 
           {error ? <p className="text-xs text-error">{error}</p> : null}

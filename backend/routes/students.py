@@ -15,6 +15,7 @@ import utils
 from database import get_db
 
 router = APIRouter(prefix="/students", tags=["Student Management"])
+_UNSET = object()
 
 
 # helper functions for serial identification numbers
@@ -30,12 +31,25 @@ def format_silete_id(short_code: str, year: int, serial: int) -> str:
     return f"{short_code}/{year}/{serial:04d}"
 
 
-def _sync_primary_parent(db: Session, student: models.Student, org_id: UUID, parent_phone: Optional[str]) -> None:
+def _sync_primary_parent(
+    db: Session,
+    student: models.Student,
+    org_id: UUID,
+    parent_phone: Optional[str] = None,
+    parent_email: Optional[str] | object = _UNSET,
+) -> None:
+    if parent_email is not _UNSET:
+        student.parent_email = utils.sanitize_email(parent_email) if parent_email else None
+
     if not parent_phone:
+        if not student.parents:
+            student.parents = []
         return
 
     normalized_phone = utils.normalize_phone_number(parent_phone)
     if not normalized_phone:
+        if not student.parents:
+            student.parents = []
         return
 
     parent = db.query(models.Parent).filter(
@@ -57,6 +71,8 @@ def _sync_primary_parent(db: Session, student: models.Student, org_id: UUID, par
 def _decorate_student_contact(student: models.Student) -> models.Student:
     primary_parent = student.parents[0] if getattr(student, "parents", None) else None
     student.parent_phone = primary_parent.primary_phone if primary_parent else None
+    if not getattr(student, "parent_email", None):
+        student.parent_email = None
     return student
 
 
@@ -87,11 +103,12 @@ def create_single_student(
         admission_year=year,
         first_name=student_in.first_name,
         last_name=student_in.last_name,
-        date_of_birth=student_in.date_of_birth
+        date_of_birth=student_in.date_of_birth,
+        parent_email=student_in.parent_email,
     )
     db.add(new_student)
     db.flush()
-    _sync_primary_parent(db, new_student, current_user.org_id, student_in.parent_phone)
+    _sync_primary_parent(db, new_student, current_user.org_id, student_in.parent_phone, student_in.parent_email)
     db.commit()
     db.refresh(new_student)
     new_student = db.query(models.Student).options(selectinload(models.Student.parents)).filter(
@@ -132,6 +149,7 @@ def bulk_upload_students(
             first_name = (row.get('first_name') or '').strip()
             last_name = (row.get('last_name') or '').strip()
             parent_phone = (row.get('parent_phone') or '').strip() or None
+            parent_email = (row.get('parent_email') or '').strip() or None
             dob_value = (row.get('dob') or '').strip()
             date_of_birth = None
 
@@ -153,11 +171,12 @@ def bulk_upload_students(
                 admission_year=year,
                 first_name=first_name,
                 last_name=last_name,
-                date_of_birth=date_of_birth
+                date_of_birth=date_of_birth,
+                parent_email=utils.sanitize_email(parent_email) if parent_email else None,
             )
             db.add(new_student)
             db.flush()
-            _sync_primary_parent(db, new_student, current_user.org_id, parent_phone)
+            _sync_primary_parent(db, new_student, current_user.org_id, parent_phone, parent_email)
             students_to_add.append(new_student)
             current_serial += 1
 
@@ -308,11 +327,19 @@ def update_student(
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid class")
 
     parent_phone = update_data.pop("parent_phone", None)
+    parent_email_present = "parent_email" in update_data
+    parent_email = update_data.pop("parent_email", None)
     for key, value in update_data.items():
         setattr(student, key, value)
 
-    if parent_phone is not None:
-        _sync_primary_parent(db, student, current_user.org_id, parent_phone)
+    if parent_phone is not None or parent_email_present:
+        _sync_primary_parent(
+            db,
+            student,
+            current_user.org_id,
+            parent_phone,
+            parent_email if parent_email_present else _UNSET,
+        )
 
     db.commit()
     db.refresh(student)

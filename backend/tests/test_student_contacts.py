@@ -11,14 +11,17 @@ class StudentContactSchemaTests(unittest.TestCase):
             last_name="Lovelace",
             class_id=uuid4(),
             parent_phone="08012345678",
+            parent_email="parent@example.com",
         )
 
         self.assertEqual(payload.parent_phone, "+2348012345678")
+        self.assertEqual(payload.parent_email, "parent@example.com")
 
     def test_student_update_normalizes_international_phone_numbers(self):
-        payload = StudentUpdate(parent_phone="whatsapp:+234 801 234 5678")
+        payload = StudentUpdate(parent_phone="whatsapp:+234 801 234 5678", parent_email="parent@example.com")
 
         self.assertEqual(payload.parent_phone, "+2348012345678")
+        self.assertEqual(payload.parent_email, "parent@example.com")
 
 
 if __name__ == "__main__":

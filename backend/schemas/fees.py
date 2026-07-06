@@ -152,6 +152,7 @@ class InvoiceResponse(BaseModel):
     """Formats the master invoice statement for client dashboards and parent bills."""
     id: UUID
     student_id: UUID
+    template_id: Optional[UUID] = None
     session: str
     term: str
     total_amount: Decimal

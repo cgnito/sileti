@@ -11,11 +11,13 @@ from dotenv import load_dotenv
 from sqlalchemy import and_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import joinedload, selectinload
+import resend
 from twilio.rest import Client
 
 import models
 from database import SessionLocal
 import utils
+from .email_templates import build_invoice_generated_email, build_payment_received_email
 
 load_dotenv()
 
@@ -26,6 +28,8 @@ TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN")
 TWILIO_WHATSAPP_FROM = os.getenv("TWILIO_WHATSAPP_FROM")
 TWILIO_WHATSAPP_INVOICE_GENERATED_CONTENT_SID = os.getenv("TWILIO_WHATSAPP_INVOICE_GENERATED_CONTENT_SID")
 TWILIO_WHATSAPP_PAYMENT_RECEIVED_CONTENT_SID = os.getenv("TWILIO_WHATSAPP_PAYMENT_RECEIVED_CONTENT_SID")
+CHATBOT_PHONE_NUMBER = os.getenv("CHATBOT_PHONE_NUMBER", "").strip()
+EMAIL_FROM_ADDRESS = "ṣilẹti App <onboarding@resend.dev>"
 
 
 def _format_currency(value: Decimal | float | int | None) -> str:
@@ -91,16 +95,29 @@ def _build_notification_payload(invoice: models.Invoice, event_type: str) -> dic
     }
 
 
-def _build_notification_log_payload(invoice: models.Invoice, event_type: str, *, body: str, extra: dict | None = None) -> dict:
+def _build_notification_log_payload(
+    invoice: models.Invoice,
+    event_type: str,
+    *,
+    body: str,
+    channel: str,
+    recipient_email: str | None = None,
+    recipient_phone: str | None = None,
+    extra: dict | None = None,
+) -> dict:
     student = invoice.student
     payload = {
         "invoice_id": str(invoice.id),
         "event_type": event_type,
         "student_name": f"{student.first_name} {student.last_name}" if student else "the student",
         "class_name": student.school_class.name if student and student.school_class else "their class",
+        "student_id": student.silete_id if student else None,
         "amount": _format_currency(invoice.total_amount),
         "paid_amount": _format_currency(invoice.paid_amount),
         "body": body,
+        "channel": channel,
+        "recipient_email": utils.sanitize_email(recipient_email) if recipient_email else None,
+        "recipient_phone": utils.normalize_phone_number(recipient_phone) if recipient_phone else None,
         **_build_notification_payload(invoice, event_type),
     }
     if extra:
@@ -124,6 +141,32 @@ def _build_notification_body(invoice: models.Invoice, event_type: str) -> str:
     return _build_invoice_message(invoice)
 
 
+def _send_email_message(recipient_email: str, subject: str, html: str, text: str) -> tuple[str | None, str | None]:
+    if not resend.api_key:
+        return None, "Resend is not configured."
+
+    try:
+        response = resend.Emails.send(
+            {
+                "from": EMAIL_FROM_ADDRESS,
+                "to": recipient_email,
+                "subject": subject,
+                "html": html,
+                "text": text,
+            }
+        )
+        if isinstance(response, dict):
+            data = response.get("data") if isinstance(response.get("data"), dict) else {}
+            return str(response.get("id") or data.get("id") or ""), None
+
+        data = getattr(response, "data", None)
+        if isinstance(data, dict):
+            return str(getattr(response, "id", "") or data.get("id") or ""), None
+        return str(getattr(response, "id", "") or ""), None
+    except Exception as exc:
+        return None, str(exc)
+
+
 def _record_notification(
     db,
     *,
@@ -133,7 +176,8 @@ def _record_notification(
     invoice_id,
     channel: str,
     event_type: str,
-    recipient_phone: str,
+    recipient_phone: str | None,
+    recipient_email: str | None = None,
     status: str,
     message_sid: str | None = None,
     error_message: str | None = None,
@@ -148,6 +192,7 @@ def _record_notification(
             channel=channel,
             event_type=event_type,
             recipient_phone=recipient_phone,
+            recipient_email=recipient_email,
             message_sid=message_sid,
             status=status,
             error_message=error_message,
@@ -156,28 +201,30 @@ def _record_notification(
     )
 
 
-def _notification_idempotency_key(event_type: str, invoice_id: UUID, recipient_phone: str) -> str:
-    return f"{event_type}:{invoice_id}:{utils.normalize_phone_number(recipient_phone) or recipient_phone}"
+def _notification_idempotency_key(event_type: str, invoice_id: UUID, recipient: str, channel: str = "email") -> str:
+    return f"{event_type}:{invoice_id}:{channel}:{recipient}"
 
 
-def _notification_already_sent(db, *, event_type: str, invoice_id: UUID, recipient_phone: str) -> bool:
-    normalized_phone = utils.normalize_phone_number(recipient_phone)
-    if not normalized_phone:
+def _notification_already_sent(db, *, event_type: str, invoice_id: UUID, recipient_phone: str | None = None, recipient_email: str | None = None, channel: str | None = None) -> bool:
+    recipient_phone = utils.normalize_phone_number(recipient_phone) if recipient_phone else None
+    recipient_email = utils.sanitize_email(recipient_email) if recipient_email else None
+    if not recipient_phone and not recipient_email:
         return False
 
-    return (
-        db.query(models.NotificationLog)
-        .filter(
-            and_(
-                models.NotificationLog.event_type == event_type,
-                models.NotificationLog.invoice_id == invoice_id,
-                models.NotificationLog.recipient_phone == normalized_phone,
-                models.NotificationLog.status == "sent",
-            )
+    query = db.query(models.NotificationLog).filter(
+        and_(
+            models.NotificationLog.event_type == event_type,
+            models.NotificationLog.invoice_id == invoice_id,
+            models.NotificationLog.status == "sent",
         )
-        .first()
-        is not None
     )
+    if channel:
+        query = query.filter(models.NotificationLog.channel == channel)
+    if recipient_phone:
+        query = query.filter(models.NotificationLog.recipient_phone == recipient_phone)
+    if recipient_email:
+        query = query.filter(models.NotificationLog.recipient_email == recipient_email)
+    return query.first() is not None
 
 
 def _send_whatsapp_message(
@@ -215,7 +262,8 @@ def _send_invoice_notification(
     db,
     invoice: models.Invoice,
     event_type: str,
-    recipient_phone: str,
+    recipient_phone: str | None,
+    recipient_email: str | None,
     *,
     allow_existing: bool = False,
     notification_log: models.NotificationLog | None = None,
@@ -224,18 +272,45 @@ def _send_invoice_notification(
     body = _build_notification_body(invoice, event_type)
     payload = payload or _build_notification_payload(invoice, event_type)
     normalized_phone = utils.normalize_phone_number(recipient_phone)
-    if not normalized_phone:
-        return None, "Invalid recipient phone number."
+    normalized_email = utils.sanitize_email(recipient_email) if recipient_email else None
 
-    if not allow_existing and _notification_already_sent(db, event_type=event_type, invoice_id=invoice.id, recipient_phone=normalized_phone):
+    if not normalized_email:
+        return None, "Invalid recipient email address."
+
+    if not allow_existing and _notification_already_sent(
+        db,
+        event_type=event_type,
+        invoice_id=invoice.id,
+        recipient_email=normalized_email,
+        channel="email",
+    ):
         return None, None
 
-    return _send_whatsapp_message(
-        normalized_phone,
-        body,
-        payload=payload,
-        content_sid=_resolve_twilio_content_sid(event_type),
-    )
+    student = invoice.student
+    if event_type == "payment_received":
+        template = build_payment_received_email(
+            student_name=f"{student.first_name} {student.last_name}" if student else "the student",
+            student_id=student.silete_id if student else "the student",
+            class_name=student.school_class.name if student and student.school_class else "their class",
+            session=invoice.session,
+            term=invoice.term,
+            total_amount=invoice.total_amount,
+            paid_amount=invoice.paid_amount,
+            chatbot_phone=CHATBOT_PHONE_NUMBER or "our chatbot",
+        )
+    else:
+        template = build_invoice_generated_email(
+            student_name=f"{student.first_name} {student.last_name}" if student else "the student",
+            student_id=student.silete_id if student else "the student",
+            class_name=student.school_class.name if student and student.school_class else "their class",
+            session=invoice.session,
+            term=invoice.term,
+            due_date=invoice.due_date.strftime("%d %b %Y") if invoice.due_date else "no due date",
+            total_amount=invoice.total_amount,
+            chatbot_phone=CHATBOT_PHONE_NUMBER or "our chatbot",
+        )
+
+    return _send_email_message(normalized_email, template.subject, template.html, template.text)
 
 
 def _notify_invoice_event(db, invoice: models.Invoice, event_type: str) -> None:
@@ -244,80 +319,75 @@ def _notify_invoice_event(db, invoice: models.Invoice, event_type: str) -> None:
         logger.warning("Skipping notification for invoice %s because the student relation is missing.", invoice.id)
         return
 
-    phones = list(dict.fromkeys(parent.primary_phone for parent in student.parents if parent.primary_phone))
-    if not phones and getattr(student, "parent_phone", None):
-        phones = [student.parent_phone]
+    recipient_email = utils.sanitize_email(getattr(student, "parent_email", None))
+    recipient_phone = utils.normalize_phone_number(getattr(student, "parent_phone", None))
 
-    if not phones:
+    if not recipient_email:
         _record_notification(
             db,
             org_id=invoice.org_id,
             student_id=student.id,
             invoice_id=invoice.id,
-            idempotency_key=_notification_idempotency_key(event_type, invoice.id, ""),
-            channel="whatsapp",
+            idempotency_key=_notification_idempotency_key(event_type, invoice.id, str(invoice.id), "email"),
+            channel="email",
             event_type=event_type,
-            recipient_phone="",
+            recipient_phone=recipient_phone,
+            recipient_email=None,
             status="skipped",
-            error_message="No parent WhatsApp number is stored for this student.",
-            payload=_build_notification_log_payload(invoice, event_type, body=_build_notification_body(invoice, event_type)),
+            error_message="No parent email address is stored for this student.",
+            payload=_build_notification_log_payload(
+                invoice,
+                event_type,
+                body=_build_notification_body(invoice, event_type),
+                channel="email",
+                recipient_email=None,
+                recipient_phone=recipient_phone,
+            ),
         )
         db.commit()
         return
 
     body = _build_invoice_message(invoice) if event_type == "invoice_generated" else _build_payment_message(invoice)
     payload = _build_notification_payload(invoice, event_type)
-    log_payload = _build_notification_log_payload(invoice, event_type, body=body)
+    log_payload = _build_notification_log_payload(
+        invoice,
+        event_type,
+        body=body,
+        channel="email",
+        recipient_email=recipient_email,
+        recipient_phone=recipient_phone,
+    )
 
-    for phone in phones:
-        normalized_phone = utils.normalize_phone_number(phone)
-        if not normalized_phone:
+    idempotency_key = _notification_idempotency_key(event_type, invoice.id, recipient_email, "email")
+    message_sid, error_message = _send_invoice_notification(
+        db,
+        invoice,
+        event_type,
+        recipient_phone,
+        recipient_email,
+        payload=payload,
+    )
+
+    with db.begin_nested():
+        try:
             _record_notification(
                 db,
                 org_id=invoice.org_id,
                 student_id=student.id,
                 invoice_id=invoice.id,
-                idempotency_key=_notification_idempotency_key(event_type, invoice.id, phone),
-                channel="whatsapp",
+                idempotency_key=idempotency_key,
+                channel="email",
                 event_type=event_type,
-                recipient_phone=phone,
-                status="skipped",
-                error_message="Invalid recipient phone number.",
+                recipient_phone=recipient_phone,
+                recipient_email=recipient_email,
+                status="sent" if message_sid else "failed",
+                message_sid=message_sid,
+                error_message=error_message,
                 payload=log_payload,
             )
-            continue
-
-        if _notification_already_sent(db, event_type=event_type, invoice_id=invoice.id, recipient_phone=normalized_phone):
-            continue
-
-        idempotency_key = _notification_idempotency_key(event_type, invoice.id, normalized_phone)
-        message_sid, error_message = _send_invoice_notification(
-            db,
-            invoice,
-            event_type,
-            normalized_phone,
-            payload=payload,
-        )
-
-        with db.begin_nested():
-            try:
-                _record_notification(
-                    db,
-                    org_id=invoice.org_id,
-                    student_id=student.id,
-                    invoice_id=invoice.id,
-                    idempotency_key=idempotency_key,
-                    channel="whatsapp",
-                    event_type=event_type,
-                    recipient_phone=normalized_phone,
-                    status="sent" if message_sid else "failed",
-                    message_sid=message_sid,
-                    error_message=error_message,
-                    payload=log_payload,
-                )
-                db.flush()
-            except IntegrityError:
-                continue
+            db.flush()
+        except IntegrityError:
+            pass
 
     db.commit()
 
@@ -345,15 +415,30 @@ def resend_notification_attempt(db, notification_log_id: UUID, org_id: UUID) -> 
     if not invoice:
         raise ValueError("Invoice record not found for this notification.")
 
-    message_sid, error_message = _send_invoice_notification(
-        db,
-        invoice,
-        notification_log.event_type,
-        notification_log.recipient_phone,
-        allow_existing=True,
-        notification_log=notification_log,
-        payload=_build_notification_payload(invoice, notification_log.event_type),
-    )
+    recipient_email = notification_log.recipient_email or getattr(invoice.student, "parent_email", None)
+    recipient_phone = notification_log.recipient_phone or getattr(invoice.student, "parent_phone", None)
+
+    if notification_log.channel == "email":
+        message_sid, error_message = _send_invoice_notification(
+            db,
+            invoice,
+            notification_log.event_type,
+            recipient_phone,
+            recipient_email,
+            allow_existing=True,
+            notification_log=notification_log,
+            payload=_build_notification_payload(invoice, notification_log.event_type),
+        )
+    else:
+        normalized_phone = utils.normalize_phone_number(recipient_phone) if recipient_phone else None
+        if not normalized_phone:
+            raise ValueError("Invalid recipient phone number.")
+        message_sid, error_message = _send_whatsapp_message(
+            normalized_phone,
+            _build_notification_body(invoice, notification_log.event_type),
+            payload=_build_notification_payload(invoice, notification_log.event_type),
+            content_sid=_resolve_twilio_content_sid(notification_log.event_type),
+        )
 
     notification_log.message_sid = message_sid
     notification_log.status = "sent" if message_sid else "failed"
@@ -362,6 +447,9 @@ def resend_notification_attempt(db, notification_log_id: UUID, org_id: UUID) -> 
         invoice,
         notification_log.event_type,
         body=_build_notification_body(invoice, notification_log.event_type),
+        channel=notification_log.channel,
+        recipient_email=notification_log.recipient_email,
+        recipient_phone=notification_log.recipient_phone,
         extra={"resent_from_notification_id": str(notification_log.id)},
     )
 

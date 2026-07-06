@@ -228,6 +228,7 @@ def create_checkout_order(amount_kobo: int, order_ref: str, school_subaccount_id
         "amount": amount_string,
         "currency": "NGN",
         "orderReference": order_ref,
+        "merchantTxRef": order_ref,
         "callbackUrl": _resolve_checkout_callback_url(),
         "allowedPaymentMethods": ["Card", "Transfer"],
         "accountId": resolved_account_id,

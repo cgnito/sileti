@@ -24,7 +24,8 @@ type NotificationLog = {
   invoice_id: string | null;
   channel: string;
   event_type: string;
-  recipient_phone: string;
+  recipient_phone: string | null;
+  recipient_email: string | null;
   message_sid: string | null;
   status: string;
   error_message: string | null;
@@ -87,6 +88,7 @@ export default function NotificationsPage() {
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [eventFilter, setEventFilter] = useState("");
+  const [channelFilter, setChannelFilter] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [isResending, setIsResending] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -105,6 +107,7 @@ export default function NotificationsPage() {
       if (query.trim()) params.set("query", query.trim());
       if (statusFilter) params.set("status", statusFilter);
       if (eventFilter) params.set("event_type", eventFilter);
+      if (channelFilter) params.set("channel", channelFilter);
 
       const data = await apiClient.get<NotificationListResponse>(`/orgs/notifications?${params.toString()}`);
       setItems(data.items);
@@ -119,7 +122,7 @@ export default function NotificationsPage() {
 
   useEffect(() => {
     void loadNotifications();
-  }, [page, query, statusFilter, eventFilter]);
+  }, [page, query, statusFilter, eventFilter, channelFilter]);
 
   const currentRange = useMemo(() => {
     if (!total) return "0 notifications";
@@ -136,7 +139,10 @@ export default function NotificationsPage() {
     setFeedback(null);
     try {
       const updated = await apiClient.post<NotificationLog>(`/orgs/notifications/${notificationId}/resend`);
-      setFeedback(`Resent ${updated.event_type.replace(/_/g, " ")} to ${updated.recipient_phone}.`);
+      const recipient = updated.channel === "email"
+        ? updated.recipient_email ?? updated.recipient_phone ?? "the recipient"
+        : updated.recipient_phone ?? updated.recipient_email ?? "the recipient";
+      setFeedback(`Resent ${updated.event_type.replace(/_/g, " ")} to ${recipient}.`);
       await loadNotifications();
     } catch (err) {
       setError(err instanceof Error ? err.message : "We could not resend that notification.");
@@ -150,7 +156,7 @@ export default function NotificationsPage() {
       <DashboardHero
         eyebrow="Overview"
         title="Notifications"
-        description="Track outbound WhatsApp alerts for invoices and payments from one audit trail."
+        description="Track outbound invoice and payment notifications from one audit trail. Parents are first notified by email, then continue the payment flow in WhatsApp."
         action={(
           <Button variant="secondary" size="sm" onClick={() => void loadNotifications()}>
             <RefreshCw className="h-4 w-4" />
@@ -179,21 +185,37 @@ export default function NotificationsPage() {
           </div>
         </div>
 
-        <div className="grid gap-3 md:grid-cols-[1.4fr_0.8fr_0.8fr]">
+        <div className="grid gap-3 md:grid-cols-[1.4fr_0.8fr_0.8fr_0.8fr]">
           <label className="space-y-2 text-sm text-on-surface-variant">
             <span className="block font-medium text-on-surface">Search</span>
             <div className="relative">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-on-surface-variant" />
-              <input
-                value={query}
-                onChange={(event) => {
-                  setPage(1);
-                  setQuery(event.target.value);
-                }}
-                placeholder="Search by student, phone, class, or SID"
-                className="w-full rounded-lg border border-border bg-white py-2.5 pl-9 pr-3 text-sm text-on-surface outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/20"
-              />
-            </div>
+                <input
+                  value={query}
+                  onChange={(event) => {
+                    setPage(1);
+                    setQuery(event.target.value);
+                  }}
+                  placeholder="Search by student, email, phone, class, or SID"
+                  className="w-full rounded-lg border border-border bg-white py-2.5 pl-9 pr-3 text-sm text-on-surface outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/20"
+                />
+              </div>
+          </label>
+
+          <label className="space-y-2 text-sm text-on-surface-variant">
+            <span className="block font-medium text-on-surface">Channel</span>
+            <select
+              value={channelFilter}
+              onChange={(event) => {
+                setPage(1);
+                setChannelFilter(event.target.value);
+              }}
+              className="w-full rounded-lg border border-border bg-white px-3 py-2.5 text-sm text-on-surface outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/20"
+            >
+              <option value="">All channels</option>
+              <option value="email">Email</option>
+              <option value="whatsapp">WhatsApp</option>
+            </select>
           </label>
 
           <label className="space-y-2 text-sm text-on-surface-variant">
@@ -267,17 +289,18 @@ export default function NotificationsPage() {
         ) : items.length === 0 ? (
           <DashboardEmptyState
             title="No notifications yet"
-            description="Once invoices are generated or payments are confirmed, the outbound WhatsApp attempts will show up here."
+            description="Once invoices are generated or payments are confirmed, the outbound notification attempts will show up here."
           />
         ) : (
           <>
             <div className="overflow-x-auto rounded-xl border border-border/70">
-              <div className="min-w-[1120px]">
-                <div className="grid grid-cols-[1.2fr_0.9fr_0.8fr_0.8fr_1.1fr_0.9fr_0.7fr_0.7fr] bg-surface-container-low px-4 py-3 text-[11px] font-label uppercase tracking-[0.35em] text-on-surface-variant">
+              <div className="min-w-[1240px]">
+                <div className="grid grid-cols-[1.1fr_1fr_0.9fr_0.9fr_0.9fr_1.1fr_0.9fr_0.8fr_0.7fr] bg-surface-container-low px-4 py-3 text-[11px] font-label uppercase tracking-[0.35em] text-on-surface-variant">
                   <span>Recipient</span>
                   <span>Student</span>
                   <span>Class</span>
                   <span>Event</span>
+                  <span>Channel</span>
                   <span>Invoice</span>
                   <span>Sent</span>
                   <span>Status</span>
@@ -285,10 +308,15 @@ export default function NotificationsPage() {
                 </div>
                 <div className="divide-y divide-border/70 bg-white">
                   {items.map((item) => (
-                    <div key={item.id} className="grid grid-cols-[1.2fr_0.9fr_0.8fr_0.8fr_1.1fr_0.9fr_0.7fr_0.7fr] items-center px-4 py-4 text-sm">
+                    <div key={item.id} className="grid grid-cols-[1.1fr_1fr_0.9fr_0.9fr_0.9fr_1.1fr_0.9fr_0.8fr_0.7fr] items-center px-4 py-4 text-sm">
                       <div className="min-w-0">
-                        <p className="truncate font-medium text-on-surface">{item.recipient_phone}</p>
-                        <p className="truncate text-xs text-on-surface-variant">{item.channel}</p>
+                        <p className="truncate font-medium text-on-surface">{item.channel === "email" ? (item.recipient_email ?? item.recipient_phone) : item.recipient_phone}</p>
+                        <p className="truncate text-xs text-on-surface-variant">{item.recipient_email ?? item.recipient_phone ?? "—"}</p>
+                        <p className="truncate text-[11px] text-on-surface-variant">
+                          {item.channel === "email"
+                            ? "Invoice email with WhatsApp CTA"
+                            : "WhatsApp payment follow-up"}
+                        </p>
                       </div>
 
                       <div className="min-w-0">
@@ -307,6 +335,12 @@ export default function NotificationsPage() {
                       <div className="min-w-0">
                         <p className="truncate font-medium text-on-surface">{item.event_type.replace(/_/g, " ")}</p>
                         {item.message_sid ? <p className="truncate text-xs text-on-surface-variant font-mono">{item.message_sid}</p> : null}
+                      </div>
+
+                      <div className="min-w-0">
+                        <span className="inline-flex rounded-full border border-border px-3 py-1 text-xs font-semibold capitalize text-on-surface-variant">
+                          {item.channel}
+                        </span>
                       </div>
 
                       <div className="min-w-0">

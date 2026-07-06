@@ -42,7 +42,8 @@ class NombaWebhookTests(unittest.TestCase):
         ).digest()
         return base64.b64encode(digest).decode("utf-8")
 
-    def _build_checkout_payload(self, order_ref: str, transaction_id: str) -> WebhookPayload:
+    def _build_checkout_payload(self, order_ref: str, transaction_id: str, merchant_tx_ref: str | None = None) -> WebhookPayload:
+        merchant_tx_ref = merchant_tx_ref or order_ref
         return WebhookPayload.model_validate(
             {
                 "event_type": "payment_success",
@@ -58,7 +59,7 @@ class NombaWebhookTests(unittest.TestCase):
                         "transactionAmount": 500,
                         "time": "2026-02-06T10:21:56Z",
                         "responseCode": "",
-                        "merchantTxRef": order_ref,
+                        "merchantTxRef": merchant_tx_ref,
                     },
                     "order": {
                         "orderReference": order_ref,
@@ -162,6 +163,44 @@ class NombaWebhookTests(unittest.TestCase):
         self.assertEqual(ledger.status, models.PaymentLedgerStatus.SUCCESS.value)
         self.assertEqual(float(ledger.amount), 500.0)
         self.assertEqual(ledger.invoice_id, invoice.id)
+
+    def test_checkout_webhook_prefers_merchant_tx_ref_when_order_reference_differs(self):
+        db = self.session_factory()
+        order_ref = "order-ref-test-0001"
+        merchant_ref = "mref-001"
+        _, invoice, transaction = self._seed_checkout_state(db, merchant_ref)
+        payload = self._build_checkout_payload(order_ref=order_ref, transaction_id="tx-checkout-002", merchant_tx_ref=merchant_ref)
+        timestamp = "2026-02-06T10:21:56Z"
+        signature = self._make_signature(payload, timestamp)
+
+        with patch("routes.webhooks.payments.verify_transaction_by_id") as mock_verify:
+            mock_verify.return_value = {
+                "status": "SUCCESS",
+                "orderReference": order_ref,
+                "merchantTxRef": merchant_ref,
+                "paymentMethod": "transfer",
+                "amount": 500,
+            }
+
+            result = asyncio.run(
+                webhooks.nomba_webhook_handler(
+                    payload=payload,
+                    nomba_signature=signature,
+                    nomba_timestamp=timestamp,
+                    db=db,
+                )
+            )
+
+        self.assertEqual(result["status"], "success")
+        db.refresh(transaction)
+        db.refresh(invoice)
+        self.assertEqual(transaction.status, models.TransactionStatus.SUCCESS.value)
+        self.assertEqual(float(invoice.paid_amount), 500.0)
+
+        ledger = db.query(models.PaymentLedger).filter(models.PaymentLedger.request_id == payload.request_id).first()
+        self.assertIsNotNone(ledger)
+        self.assertEqual(ledger.gateway_reference, merchant_ref)
+        self.assertEqual(ledger.status, models.PaymentLedgerStatus.SUCCESS.value)
 
     def test_duplicate_checkout_webhook_does_not_double_count_payment(self):
         db = self.session_factory()

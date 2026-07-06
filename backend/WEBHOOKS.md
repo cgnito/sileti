@@ -76,10 +76,8 @@ It also depends on these environment variables:
 
 `backend/routes/payments.py` creates the checkout order and returns the checkout link.
 
-The important side effect is this:
-
-- The checkout order uses an `orderReference`.
-- That `orderReference` is the reference the webhook layer should later use to match the payment to the local `Transaction` row.
+- The checkout order uses a merchant-side reference that the webhook layer should later use to match the payment to the local `Transaction` row.
+- In this repo, that canonical checkout reference is now treated as `merchantTxRef` first, with `orderReference` still accepted as a fallback when Nomba returns it that way.
 - The webhook layer should always verify the payment with Nomba before granting any value.
 
 The relevant verification endpoint is:
@@ -101,7 +99,7 @@ For `payment_success`, the intended flow is:
 4. Extract the transaction ID and the order reference from the webhook payload.
 5. Verify the payment with Nomba using either `transactionRef` or `orderReference`.
 6. Confirm the returned status is `SUCCESS`.
-7. Find the local `Transaction` row by `orderReference`.
+7. Find the local `Transaction` row by the resolved checkout reference, preferring `merchantTxRef` first.
 8. Update the `Transaction` and linked `Invoice`.
 9. Write a `WebhookLog` row and a `PaymentLedger` row.
 10. Return a 2xx response.
@@ -122,6 +120,7 @@ The current handler is written around these fields:
 - `data.transaction.time`
 - `data.transaction.responseCode`
 - `data.order.orderReference`
+- `data.transaction.merchantTxRef`
 
 The current schema in `backend/schemas/webhooks.py` is intended to accept the docs payload shape:
 
@@ -161,6 +160,8 @@ The current handler verifies the payload signature with:
 - `transaction.time`
 - normalized `responseCode`
 - `nomba-timestamp`
+
+The handler now accepts either the base64 HMAC output or the hex HMAC output, because the training docs and the current integration notes have shown both styles in the wild.
 
 If any of those fields are missing, differently named, or transformed before verification, the request will be rejected.
 
@@ -279,7 +280,8 @@ The webhook handler should treat these local tables as the source of your intern
 
 The key local lookup is:
 
-- find `Transaction` by `Transaction.reference == orderReference`
+- find `Transaction` by `Transaction.reference == merchantTxRef` first
+- fall back to `orderReference` only if the verified payload does not include a merchant reference
 
 If that lookup fails, the webhook should not invent a match.
 It should log and ignore the event safely.
@@ -348,7 +350,9 @@ This section is the short version of the work already done in this chat so the n
 
 - `backend/routes/webhooks.py`
 	- Added resilient checkout-reference resolution.
+	- Prioritized `merchantTxRef` as the checkout reference source of truth.
 	- Added more defensive handling for verification response shapes.
+	- Accepts both base64 and hex representations of the computed HMAC signature.
 	- Updated invoice status assignment to use enum values consistently.
 	- Kept webhook deduplication by `requestId`.
 	- Preserved signature verification as the first gate before processing anything.

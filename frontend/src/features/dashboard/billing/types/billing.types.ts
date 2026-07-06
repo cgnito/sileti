@@ -39,6 +39,7 @@ export interface InvoiceLineItem {
 export interface InvoiceSummary {
   id: string;
   student_id: string;
+  template_id?: string | null;
   session: string;
   term: string;
   total_amount: number | string;

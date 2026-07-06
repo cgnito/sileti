@@ -48,9 +48,19 @@ export default function InvoiceDetailPage() {
   const availableOptionalItems = useMemo(() => {
     if (!invoice) return [];
     const existingNames = new Set((invoice.items ?? []).map((item) => item.name));
-    return templates.flatMap((template) =>
+    const matchingTemplate = invoice.template_id
+      ? templates.find((template) => template.id === invoice.template_id) ?? null
+      : null;
+    const sourceTemplates = matchingTemplate ? [matchingTemplate] : templates;
+    const optionalItems = sourceTemplates.flatMap((template) =>
       template.line_items.filter((lineItem) => !lineItem.is_compulsory && !existingNames.has(lineItem.name)),
     );
+    const seen = new Set<string>();
+    return optionalItems.filter((item) => {
+      if (seen.has(item.id)) return false;
+      seen.add(item.id);
+      return true;
+    });
   }, [invoice, templates]);
 
   const runningTotal = useMemo(() => {
@@ -168,7 +178,9 @@ export default function InvoiceDetailPage() {
             <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
               <div>
                 <h3 className="font-headline text-xl text-on-surface">Line items</h3>
-                <p className="mt-1 text-sm text-on-surface-variant">Add optional charges or remove them before the invoice is settled.</p>
+                <p className="mt-1 text-sm text-on-surface-variant">
+                  Add optional charges from the invoice template before the bill is settled.
+                </p>
               </div>
               <div className="flex flex-wrap items-center gap-3">
                 <select
