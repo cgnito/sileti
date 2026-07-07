@@ -93,6 +93,11 @@ export default function InvoiceDetailPage() {
     [invoice?.transactions],
   );
 
+  const selectedTransaction = useMemo(
+    () => invoice?.transactions?.find((transaction) => transaction.reference === selectedTransactionReference) ?? null,
+    [invoice?.transactions, selectedTransactionReference],
+  );
+
   useEffect(() => {
     const transactions = invoice?.transactions ?? [];
     if (!transactions.length) {
@@ -258,61 +263,41 @@ export default function InvoiceDetailPage() {
             </div>
           </DashboardPanel>
 
-          <DashboardPanel>
-            <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
-              <div>
-                <h3 className="font-headline text-xl text-on-surface">Line items</h3>
-                <p className="mt-1 text-sm text-on-surface-variant">
-                  Add optional charges from the invoice template before the bill is settled.
-                </p>
-                <p className="mt-2 text-xs text-on-surface-variant">
-                  If the webhook did not settle this invoice yet, you can use the optional payment recheck above. It will use the recorded checkout reference when available, or the invoice's stored transaction record otherwise.
-                </p>
-                </div>
-              <div className="flex flex-wrap items-center gap-3">
-                <select
-                  value={selectedItemId}
-                  onChange={(event) => setSelectedItemId(event.target.value)}
-                  className="rounded-lg border border-border bg-white px-3 py-2 text-sm text-on-surface outline-none focus:border-primary"
-                >
-                  <option value="">Select optional fee</option>
-                  {availableOptionalItems.map((item) => (
-                    <option key={item.id} value={item.id}>
-                      {item.name}
-                    </option>
-                  ))}
-                </select>
-                <Button onClick={() => void handleAddItem()} disabled={isMutating || !selectedItemId}>
-                  <PlusCircle className="h-4 w-4" />
-                  Add fee
-                </Button>
-                <Button variant="secondary" onClick={() => void handleVoid()} disabled={isMutating || invoice.status === "voided"}>
-                  <XCircle className="h-4 w-4" />
-                  Void invoice
-                </Button>
-              </div>
-            </div>
-
-            {actionError ? (
-              <div className="mt-4 rounded-xl border border-error/20 bg-error/10 px-4 py-3 text-sm text-error">
-                {actionError}
-              </div>
-            ) : null}
-
-            <div className="mt-6 rounded-xl border border-border/70 bg-surface-container-low/50 p-4">
-              <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+          <div className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
+            <DashboardPanel>
+              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                 <div>
-                  <h4 className="font-semibold text-on-surface">Checkout attempts</h4>
-                  <p className="text-sm text-on-surface-variant">
-                    Pick the exact transaction you want to verify. This avoids guessing when an invoice has multiple attempts.
+                  <h3 className="font-headline text-xl text-on-surface">Checkout attempts</h3>
+                  <p className="mt-1 text-sm text-on-surface-variant">
+                    Pick the exact transaction you want to verify or reverse.
                   </p>
                 </div>
                 {invoice.transactions?.length ? (
-                  <div className="text-xs font-medium text-on-surface-variant">
+                  <div className="rounded-full border border-border bg-surface-container-low px-3 py-1 text-xs font-semibold text-on-surface-variant">
                     {invoice.transactions.length} attempt{invoice.transactions.length === 1 ? "" : "s"} recorded
                   </div>
                 ) : null}
               </div>
+
+              {selectedTransaction ? (
+                <div className="mt-4 rounded-2xl border border-primary/20 bg-primary/5 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-[0.25em] text-primary">Selected attempt</p>
+                  <div className="mt-3 grid gap-3 md:grid-cols-3">
+                    <div>
+                      <p className="text-xs uppercase tracking-[0.2em] text-on-surface-variant">Reference</p>
+                      <p className="mt-1 font-semibold text-on-surface">{selectedTransaction.reference}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs uppercase tracking-[0.2em] text-on-surface-variant">Status</p>
+                      <p className="mt-1 font-semibold text-on-surface">{selectedTransaction.status}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs uppercase tracking-[0.2em] text-on-surface-variant">Amount</p>
+                      <p className="mt-1 font-semibold text-on-surface">{formatCurrency(selectedTransaction.amount)}</p>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
 
               {invoice.transactions?.length ? (
                 <div className="mt-4 grid gap-3">
@@ -325,7 +310,9 @@ export default function InvoiceDetailPage() {
                         ? "border-green-200 bg-green-50 text-green-700"
                         : status === "FAILED"
                           ? "border-rose-200 bg-rose-50 text-rose-700"
-                          : "border-amber-200 bg-amber-50 text-amber-700";
+                          : status === "REVERSED"
+                            ? "border-slate-200 bg-slate-100 text-slate-700"
+                            : "border-amber-200 bg-amber-50 text-amber-700";
 
                     return (
                       <button
@@ -370,25 +357,22 @@ export default function InvoiceDetailPage() {
                           </div>
                         </div>
 
-                        <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-on-surface-variant">
-                          <span>Reference used for manual verification and webhook reconciliation.</span>
-                          <div className="flex flex-wrap items-center gap-2">
-                            <span className="font-medium text-on-surface">
-                              {transaction.checkout_url ? "Checkout link issued" : "No checkout link stored"}
-                            </span>
-                            {status !== "REVERSED" && !isSelected ? (
-                              <button
-                                type="button"
-                                onClick={() => void handleReverseTransaction(transaction.id)}
-                                disabled={isReversing || isMutating}
-                                className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-white px-3 py-1.5 text-[11px] font-semibold text-on-surface-variant transition-colors hover:bg-surface-container-low disabled:cursor-not-allowed disabled:opacity-60"
-                                title="Mark this extra attempt as reversed/refunded so it is no longer treated as pending."
-                              >
-                                <RotateCcw className={`h-3.5 w-3.5 ${isReversing ? "animate-spin" : ""}`} />
-                                {isReversing ? "Reversing…" : "Mark refunded"}
-                              </button>
-                            ) : null}
-                          </div>
+                        <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-on-surface-variant">
+                          <span>
+                            {transaction.checkout_url ? "Checkout link issued" : "No checkout link stored"} · used for manual verification and reconciliation.
+                          </span>
+                          {status !== "REVERSED" && !isSelected ? (
+                            <button
+                              type="button"
+                              onClick={() => void handleReverseTransaction(transaction.id)}
+                              disabled={isReversing || isMutating}
+                              className="inline-flex items-center gap-1.5 rounded-full border border-border bg-white px-3 py-1.5 text-[11px] font-semibold text-on-surface-variant transition-colors hover:bg-surface-container-low disabled:cursor-not-allowed disabled:opacity-60"
+                              title="Mark this extra attempt as reversed/refunded so it is no longer treated as active."
+                            >
+                              <RotateCcw className={`h-3.5 w-3.5 ${isReversing ? "animate-spin" : ""}`} />
+                              {isReversing ? "Reversing…" : "Mark refunded"}
+                            </button>
+                          ) : null}
                         </div>
                       </button>
                     );
@@ -399,30 +383,80 @@ export default function InvoiceDetailPage() {
                   No transaction attempts have been recorded for this invoice yet.
                 </div>
               )}
-            </div>
+            </DashboardPanel>
 
-            <div className="mt-6 overflow-hidden rounded-xl border border-border/70">
-              <div className="grid grid-cols-[1.6fr_0.8fr_0.3fr] bg-surface-container-low px-4 py-3 text-xs font-semibold uppercase tracking-[0.2em] text-on-surface-variant">
-                <span>Name</span>
-                <span>Amount</span>
-                <span>Action</span>
-              </div>
-              <div className="divide-y divide-border/70 bg-white">
-                {(invoice.items ?? []).map((item) => (
-                  <div key={item.id} className="grid grid-cols-[1.6fr_0.8fr_0.3fr] items-center px-4 py-4">
-                    <div>
-                      <p className="font-semibold text-on-surface">{item.name}</p>
-                      <p className="text-sm text-on-surface-variant">{item.id.slice(0, 8)}</p>
+            <DashboardPanel>
+              <div className="flex flex-col gap-4">
+                <div>
+                  <h3 className="font-headline text-xl text-on-surface">Line items</h3>
+                  <p className="mt-1 text-sm text-on-surface-variant">
+                    Add optional charges from the invoice template before the bill is settled.
+                  </p>
+                  <p className="mt-2 text-xs text-on-surface-variant">
+                    If the webhook did not settle this invoice yet, use the selected attempt above to verify the exact transaction.
+                  </p>
+                </div>
+
+                <div className="rounded-2xl border border-border/70 bg-surface-container-low/60 p-4">
+                  <div className="flex flex-col gap-3">
+                    <label className="space-y-2">
+                      <span className="block text-xs font-semibold uppercase tracking-[0.2em] text-on-surface-variant">Optional fee</span>
+                      <select
+                        value={selectedItemId}
+                        onChange={(event) => setSelectedItemId(event.target.value)}
+                        className="w-full rounded-xl border border-border bg-white px-3 py-2.5 text-sm text-on-surface outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/20"
+                      >
+                        <option value="">Select optional fee</option>
+                        {availableOptionalItems.map((item) => (
+                          <option key={item.id} value={item.id}>
+                            {item.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <div className="flex flex-wrap gap-3">
+                      <Button onClick={() => void handleAddItem()} disabled={isMutating || !selectedItemId}>
+                        <PlusCircle className="h-4 w-4" />
+                        Add fee
+                      </Button>
+                      <Button variant="secondary" onClick={() => void handleVoid()} disabled={isMutating || invoice.status === "voided"}>
+                        <XCircle className="h-4 w-4" />
+                        Void invoice
+                      </Button>
                     </div>
-                    <div className="text-sm font-semibold text-on-surface">{formatCurrency(item.amount)}</div>
-                    <button onClick={() => void handleRemoveItem(item.id)} className="flex items-center justify-center text-error">
-                      <Trash2 className="h-4 w-4" />
-                    </button>
                   </div>
-                ))}
+                </div>
+
+                {actionError ? (
+                  <div className="rounded-xl border border-error/20 bg-error/10 px-4 py-3 text-sm text-error">
+                    {actionError}
+                  </div>
+                ) : null}
+
+                <div className="overflow-hidden rounded-2xl border border-border/70 bg-white">
+                  <div className="grid grid-cols-[1.6fr_0.8fr_0.3fr] bg-surface-container-low px-4 py-3 text-xs font-semibold uppercase tracking-[0.2em] text-on-surface-variant">
+                    <span>Name</span>
+                    <span>Amount</span>
+                    <span>Action</span>
+                  </div>
+                  <div className="divide-y divide-border/70">
+                    {(invoice.items ?? []).map((item) => (
+                      <div key={item.id} className="grid grid-cols-[1.6fr_0.8fr_0.3fr] items-center px-4 py-4">
+                        <div>
+                          <p className="font-semibold text-on-surface">{item.name}</p>
+                          <p className="text-sm text-on-surface-variant">{item.id.slice(0, 8)}</p>
+                        </div>
+                        <div className="text-sm font-semibold text-on-surface">{formatCurrency(item.amount)}</div>
+                        <button onClick={() => void handleRemoveItem(item.id)} className="flex items-center justify-center text-error">
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
               </div>
-            </div>
-          </DashboardPanel>
+            </DashboardPanel>
+          </div>
         </>
       ) : null}
     </DashboardPageShell>
