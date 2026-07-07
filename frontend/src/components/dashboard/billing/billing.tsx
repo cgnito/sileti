@@ -233,16 +233,16 @@ export default function BillingListPage() {
                           View details
                         </Link>
                         {invoice.status !== "paid" ? (
-                          <button
-                            type="button"
-                            onClick={() => void handleManualVerify(invoice.id, latestTransactionReference)}
-                            disabled={verifyingInvoiceId === invoice.id || !latestTransactionReference}
-                            className="inline-flex items-center gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-[11px] font-semibold text-amber-800 transition-colors hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
-                            title={latestTransactionReference ? "Verify the latest recorded checkout reference for this invoice." : "No transaction reference is available to verify yet."}
-                          >
-                            <RefreshCw className={`h-3.5 w-3.5 ${verifyingInvoiceId === invoice.id ? "animate-spin" : ""}`} />
-                            {verifyingInvoiceId === invoice.id ? "Checking…" : "Recheck"}
-                          </button>
+                        <button
+                          type="button"
+                          onClick={() => void handleManualVerify(invoice.id, latestTransactionReference)}
+                          disabled={verifyingInvoiceId === invoice.id}
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-[11px] font-semibold text-amber-800 transition-colors hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
+                          title={latestTransactionReference ? "Verify the latest recorded checkout reference for this invoice." : "No explicit reference found; the backend will try the invoice's recorded transaction(s)."}
+                        >
+                          <RefreshCw className={`h-3.5 w-3.5 ${verifyingInvoiceId === invoice.id ? "animate-spin" : ""}`} />
+                          {verifyingInvoiceId === invoice.id ? "Checking…" : "Recheck"}
+                        </button>
                         ) : null}
                       </div>
                     </div>

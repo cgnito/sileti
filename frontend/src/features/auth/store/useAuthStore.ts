@@ -55,6 +55,14 @@ export const useAuthStore = create<AuthState>()(
     {
       name: "sileti-auth",
       storage: createJSONStorage(() => localStorage),
+      onRehydrateStorage: () => (state, error) => {
+        if (error) {
+          state?.setHydrating(false);
+          return;
+        }
+
+        state?.setHydrating(false);
+      },
       partialize: (state) => ({
         user: state.user,
         org: state.org,

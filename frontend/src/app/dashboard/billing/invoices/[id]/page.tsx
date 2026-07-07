@@ -150,9 +150,9 @@ export default function InvoiceDetailPage() {
             <button
               type="button"
               onClick={() => void handleManualVerify()}
-              disabled={isMutating || invoice?.status === "paid" || !latestTransactionReference}
+              disabled={isMutating || invoice?.status === "paid"}
               className="inline-flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm font-semibold text-amber-800 transition-colors hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
-              title={latestTransactionReference ? "Verify the latest recorded checkout reference for this invoice." : "No transaction reference is available to verify yet."}
+              title={latestTransactionReference ? "Verify the latest recorded checkout reference for this invoice." : "No explicit reference found; the backend will try the invoice's recorded transaction(s)."}
             >
               <RefreshCw className="h-4 w-4" />
               Recheck payment
@@ -221,9 +221,9 @@ export default function InvoiceDetailPage() {
                 <p className="mt-1 text-sm text-on-surface-variant">
                   Add optional charges from the invoice template before the bill is settled.
                 </p>
-                  <p className="mt-2 text-xs text-on-surface-variant">
-                  If the webhook did not settle this invoice yet, you can use the optional payment recheck above for the latest recorded checkout reference.
-                  </p>
+                <p className="mt-2 text-xs text-on-surface-variant">
+                  If the webhook did not settle this invoice yet, you can use the optional payment recheck above. It will use the recorded checkout reference when available, or the invoice's stored transaction record otherwise.
+                </p>
                 </div>
               <div className="flex flex-wrap items-center gap-3">
                 <select
