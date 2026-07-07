@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Bell, CheckCircle2, Loader2, RefreshCw, Search, Send, TriangleAlert } from "lucide-react";
+import { Loader2, RefreshCw, Search, Send } from "lucide-react";
 import { apiClient } from "@/src/shared/api-client";
 import { Button } from "@/src/components/shared/Button";
 import { DashboardEmptyState, DashboardHero, DashboardPageShell, DashboardPanel } from "@/src/components/dashboard/PageChrome";
@@ -65,6 +65,19 @@ function formatAmount(value: string | number) {
     currency: "NGN",
     maximumFractionDigits: 0,
   }).format(numeric);
+}
+
+// Converts raw backend enum-style strings (e.g. "payment_received", "un_paid")
+// into display-ready text ("Payment Received", "Un Paid"). CSS `capitalize`
+// alone won't do this — it leaves underscores intact.
+function humanize(value?: string | null): string {
+  if (!value) return "—";
+  return value
+    .toLowerCase()
+    .split(/[_\s]+/)
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
 }
 
 function statusClasses(status: string) {
@@ -142,7 +155,7 @@ export default function NotificationsPage() {
       const recipient = updated.channel === "email"
         ? updated.recipient_email ?? updated.recipient_phone ?? "the recipient"
         : updated.recipient_phone ?? updated.recipient_email ?? "the recipient";
-      setFeedback(`Resent ${updated.event_type.replace(/_/g, " ")} to ${recipient}.`);
+      setFeedback(`Resent ${humanize(updated.event_type)} to ${recipient}.`);
       await loadNotifications();
     } catch (err) {
       setError(err instanceof Error ? err.message : "We could not resend that notification.");
@@ -262,23 +275,7 @@ export default function NotificationsPage() {
           </div>
         ) : null}
 
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-[1.15rem] border border-border/70 bg-surface-container-low px-4 py-3">
-          <div className="flex flex-wrap gap-2 text-xs text-on-surface-variant">
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-emerald-700">
-              <CheckCircle2 className="h-3.5 w-3.5" />
-              Sent {summary.sent}
-            </span>
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-rose-200 bg-rose-50 px-3 py-1 text-rose-700">
-              <TriangleAlert className="h-3.5 w-3.5" />
-              Failed {summary.failed}
-            </span>
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-slate-600">
-              <Bell className="h-3.5 w-3.5" />
-              Skipped {summary.skipped}
-            </span>
-          </div>
-          <p className="text-xs text-on-surface-variant">{currentRange}</p>
-        </div>
+        <p className="text-xs text-on-surface-variant">{currentRange}</p>
       </DashboardPanel>
 
       <DashboardPanel>
@@ -297,88 +294,93 @@ export default function NotificationsPage() {
           />
         ) : (
           <>
-            <div className="overflow-hidden rounded-[1.25rem] border border-border/70 bg-white">
-              <div className="hidden grid-cols-[1.35fr_1fr_0.95fr_1.05fr_0.85fr_0.85fr_0.8fr] bg-surface-container-low px-4 py-3 text-[11px] font-label uppercase tracking-[0.32em] text-on-surface-variant lg:grid">
-                <span>Recipient</span>
-                <span>Student</span>
-                <span>Event</span>
-                <span>Invoice</span>
-                <span>Sent</span>
-                <span>Status</span>
-                <span>Action</span>
-              </div>
-              <div className="divide-y divide-border/70">
-                {items.map((item) => {
-                  const recipientValue = item.channel === "email" ? (item.recipient_email ?? item.recipient_phone) : item.recipient_phone;
-                  const channelLabel = item.channel === "email" ? "Email follow-up" : "WhatsApp follow-up";
+            {/* Horizontal scroll on any viewport where the fixed column widths don't
+                fit — most relevant on mobile, but kept unconditional so the table
+                never squishes its columns illegibly on a narrow desktop window either. */}
+            <div className="overflow-x-auto rounded-[1.25rem] border border-border/70">
+              <div className="min-w-[860px]">
+                <div className="grid grid-cols-[1.2fr_1fr_0.9fr_1fr_0.8fr_0.7fr_0.7fr] gap-4 bg-surface-container-low px-4 py-3 text-[11px] font-label uppercase tracking-[0.32em] text-on-surface-variant">
+                  <span>Recipient</span>
+                  <span>Student</span>
+                  <span>Event</span>
+                  <span>Invoice</span>
+                  <span>Sent</span>
+                  <span>Status</span>
+                  <span className="text-right">Action</span>
+                </div>
+                <div className="divide-y divide-border/70 bg-white">
+                  {items.map((item) => {
+                    const recipientValue = item.channel === "email" ? (item.recipient_email ?? item.recipient_phone) : item.recipient_phone;
 
-                  return (
-                    <div key={item.id} className="grid gap-4 px-4 py-4 lg:grid-cols-[1.35fr_1fr_0.95fr_1.05fr_0.85fr_0.85fr_0.8fr] lg:items-center">
-                      <div className="min-w-0">
-                        <p className="truncate font-medium text-on-surface">{recipientValue ?? "—"}</p>
-                        <p className="mt-1 text-xs text-on-surface-variant">{channelLabel}</p>
-                        <p className="mt-1 truncate text-[11px] text-on-surface-variant">{item.recipient_email ?? item.recipient_phone ?? "No recipient captured"}</p>
+                    return (
+                      <div
+                        key={item.id}
+                        className="grid grid-cols-[1.2fr_1fr_0.9fr_1fr_0.8fr_0.7fr_0.7fr] items-center gap-4 px-4 py-4"
+                      >
+                        <div className="min-w-0">
+                          <p className="truncate font-medium text-on-surface">{recipientValue ?? "—"}</p>
+                          <p className="mt-1 text-xs text-on-surface-variant">{item.channel === "email" ? "Email" : "WhatsApp"}</p>
+                        </div>
+
+                        <div className="min-w-0">
+                          {item.student_id ? (
+                            <Link href={`/dashboard/setup/students/${item.student_id}`} className="block truncate font-medium text-on-surface transition-colors hover:text-primary">
+                              {item.student_name ?? "Student"}
+                            </Link>
+                          ) : (
+                            <p className="truncate font-medium text-on-surface">{item.student_name ?? "Unknown student"}</p>
+                          )}
+                          <p className="mt-1 truncate text-xs text-on-surface-variant">{item.class_name ?? "No class"}</p>
+                        </div>
+
+                        <p className="truncate text-sm text-on-surface">{humanize(item.event_type)}</p>
+
+                        <div className="min-w-0">
+                          {item.invoice ? (
+                            <Link href={`/dashboard/billing/invoices/${item.invoice.id}`} className="block truncate font-medium text-on-surface transition-colors hover:text-primary">
+                              {item.invoice.session} · {item.invoice.term}
+                            </Link>
+                          ) : (
+                            <p className="truncate text-sm text-on-surface-variant">No invoice</p>
+                          )}
+                          {item.invoice ? <p className="mt-1 truncate text-xs text-on-surface-variant">{formatAmount(item.invoice.total_amount)}</p> : null}
+                        </div>
+
+                        <p className="truncate text-sm text-on-surface-variant">{formatDateTime(item.created_at)}</p>
+
+                        <div className="min-w-0">
+                          <span className={`inline-flex rounded-full border px-3 py-1 text-xs font-semibold ${statusClasses(item.status)}`}>
+                            {humanize(item.status)}
+                          </span>
+                          {item.error_message ? (
+                            <p className="mt-2 line-clamp-2 break-words text-[11px] leading-5 text-on-surface-variant">{item.error_message}</p>
+                          ) : null}
+                        </div>
+
+                        <div className="flex justify-end">
+                          {item.status === "failed" ? (
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              onClick={() => void handleResend(item.id)}
+                              disabled={isResending === item.id}
+                              className="min-w-[96px]"
+                            >
+                              {isResending === item.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                              Resend
+                            </Button>
+                          ) : (
+                            <span className="text-xs text-on-surface-variant">—</span>
+                          )}
+                        </div>
                       </div>
-
-                      <div className="min-w-0">
-                        {item.student_id ? (
-                          <Link href={`/dashboard/setup/students/${item.student_id}`} className="block truncate font-medium text-on-surface transition-colors hover:text-primary">
-                            {item.student_name ?? "Student"}
-                          </Link>
-                        ) : (
-                          <p className="truncate font-medium text-on-surface">{item.student_name ?? "Unknown student"}</p>
-                        )}
-                        <p className="mt-1 truncate text-xs text-on-surface-variant">{item.class_name ?? "No class"}</p>
-                      </div>
-
-                      <div className="min-w-0">
-                        <p className="truncate font-medium text-on-surface">{item.event_type.replace(/_/g, " ")}</p>
-                        <p className="mt-1 truncate text-xs text-on-surface-variant">{item.message_sid ?? item.idempotency_key}</p>
-                      </div>
-
-                      <div className="min-w-0">
-                        {item.invoice ? (
-                          <Link href={`/dashboard/billing/invoices/${item.invoice.id}`} className="block truncate font-medium text-on-surface transition-colors hover:text-primary">
-                            {item.invoice.session} · {item.invoice.term}
-                          </Link>
-                        ) : (
-                          <p className="truncate font-medium text-on-surface-variant">No invoice link</p>
-                        )}
-                        {item.invoice ? <p className="mt-1 truncate text-xs text-on-surface-variant">{formatAmount(item.invoice.total_amount)}</p> : null}
-                      </div>
-
-                      <p className="text-sm text-on-surface-variant">{formatDateTime(item.created_at)}</p>
-
-                      <div>
-                        <span className={`inline-flex rounded-full border px-3 py-1 text-xs font-semibold ${statusClasses(item.status)}`}>
-                          {item.status}
-                        </span>
-                        {item.error_message ? <p className="mt-2 line-clamp-2 text-[11px] leading-5 text-on-surface-variant">{item.error_message}</p> : null}
-                      </div>
-
-                      <div className="flex items-start lg:justify-end">
-                        {item.status === "failed" ? (
-                          <Button
-                            size="sm"
-                            variant="secondary"
-                            onClick={() => void handleResend(item.id)}
-                            disabled={isResending === item.id}
-                            className="min-w-[96px]"
-                          >
-                            {isResending === item.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                            Resend
-                          </Button>
-                        ) : (
-                          <span className="text-xs text-on-surface-variant">—</span>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
+                    );
+                  })}
+                </div>
               </div>
             </div>
 
-            <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
               <p className="text-xs text-on-surface-variant">{currentRange}</p>
               <div className="flex items-center gap-2">
                 <Button variant="secondary" size="sm" disabled={page <= 1} onClick={() => setPage((value) => Math.max(1, value - 1))}>
