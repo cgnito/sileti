@@ -14,10 +14,10 @@ from sqlalchemy.orm import joinedload, selectinload
 import resend
 from twilio.rest import Client
 
-import models
-from database import SessionLocal
-import utils
+from app import models
+from app.database import SessionLocal
 from .email_templates import build_invoice_generated_email, build_payment_received_email
+from . import utils
 
 load_dotenv()
 

@@ -1,5 +1,14 @@
+from pathlib import Path
+import sys
+import os
+
 from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware  # <-- 1. Add this import
+from fastapi.middleware.cors import CORSMiddleware
+
+BACKEND_ROOT = Path(__file__).resolve().parent.parent
+if str(BACKEND_ROOT) not in sys.path:
+    sys.path.insert(0, str(BACKEND_ROOT))
+
 from routes import (
     orgs_router,
     auth_router,
@@ -18,19 +27,24 @@ app = FastAPI(title="ṣilẹti API")
 # 2. Define your allowed frontend origins
 origins = [
     "http://localhost:3000",      # React / Next.js
-    "http://localhost:5173",      # Vite / Vue / React
+    "http://localhost:5173",      # Vite / React
     "http://127.0.0.1:3000",
     "http://127.0.0.1:5173",
-    # Add your production frontend URL here later
 ]
 
-# 3. Add the CORS middleware to the app
+
+production_frontend_url = os.environ.get("FRONTEND_URL")
+
+if production_frontend_url:
+    # Clean up trailing slashes if any exist
+    origins.append(production_frontend_url.rstrip("/"))
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
     allow_credentials=True,
-    allow_methods=["*"],  # Allows all methods (GET, POST, PUT, DELETE, etc.)
-    allow_headers=["*"],  # Allows all headers
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # connect application routers

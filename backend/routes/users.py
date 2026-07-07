@@ -4,11 +4,10 @@ from sqlalchemy.orm import Session
 from jose import JWTError, jwt
 import logging
 
-import models
+from app import models, security
+from services import utils
 import schemas
-import security
-import utils
-from database import get_db
+from app.database import get_db
 
 logger = logging.getLogger(__name__)
 

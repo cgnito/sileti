@@ -6,8 +6,8 @@ from .billing import router as billing_router
 from .classes import router as classes_router
 from .students import router as students_router
 from .webhooks import router as webhooks_router
-from .whatsapp import router as whatsapp_router
-# from .payments import router as payments_router
+from services.whatsapp import router as whatsapp_router
+
 
 __all__ = [
     "orgs_router",

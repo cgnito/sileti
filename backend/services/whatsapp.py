@@ -6,9 +6,9 @@ from sqlalchemy.orm import Session
 from google import genai
 from google.genai import types
 
-import models
-from database import get_db
-from . import payments 
+from app import models
+from app.database import get_db
+import routes.payments as payments 
 
 router = APIRouter(prefix="/whatsapp", tags=["WhatsApp Assistant"])
 logger = logging.getLogger(__name__)

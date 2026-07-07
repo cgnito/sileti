@@ -3,10 +3,9 @@ from sqlalchemy.orm import Session
 from uuid import UUID
 from typing import List
 
-import models
-import security
+from app import models, security
 import schemas
-from database import get_db
+from app.database import get_db
 
 router = APIRouter(prefix="/billing/templates", tags=["Fee Templates"])
 

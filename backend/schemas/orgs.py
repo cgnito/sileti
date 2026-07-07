@@ -3,7 +3,7 @@ from datetime import datetime
 from decimal import Decimal
 from pydantic import BaseModel, EmailStr, Field, field_validator
 from uuid import UUID
-import utils
+from services import utils
 
 class OrgCreate(BaseModel):
     # school registration input parameters
@@ -87,7 +87,7 @@ class BankSettlementCreate(BaseModel):
     @field_validator('bank_name', 'account_name')
     @classmethod
     def clean_bank_text(cls, v: str) -> str:
-        import utils
+        from services import utils
         return utils.sanitize_text(v)
 
 
@@ -131,7 +131,7 @@ class BankSettlementUpdate(BaseModel):
     @classmethod
     def clean_update_bank_text(cls, v: Optional[str]) -> Optional[str]:
         if v:
-            import utils
+            from services import utils
             return utils.sanitize_text(v)
         return v
 

@@ -7,8 +7,8 @@ from decimal import Decimal
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from sqlalchemy.orm import Session
-from database import SessionLocal
-import models
+from app.database import SessionLocal
+from app import models
 from routes import payments
 
 

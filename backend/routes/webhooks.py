@@ -11,8 +11,8 @@ from fastapi import Request
 from sqlalchemy.orm import Session
 
 from . import payments
-from database import get_db
-from models import Invoice, InvoiceStatus, PaymentLedger, PaymentLedgerStatus, Transaction, TransactionStatus, WebhookLog
+from app.database import get_db
+from app.models import Invoice, InvoiceStatus, PaymentLedger, PaymentLedgerStatus, Transaction, TransactionStatus, WebhookLog
 from schemas.webhooks import WebhookPayload
 from services import notifications
 

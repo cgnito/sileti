@@ -1,7 +1,7 @@
 from pydantic import BaseModel, Field, field_validator
 from uuid import UUID
 from typing import List, Optional
-import utils
+from services import utils
 
 class ClassBase(BaseModel):
     name: str = Field(..., min_length=2, max_length=50, examples=["JSS 1 Gold"])

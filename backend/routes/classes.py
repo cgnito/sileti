@@ -4,9 +4,8 @@ from typing import List
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-import models
-import security
-from database import get_db
+from app import models, security
+from app.database import get_db
 from schemas.classes import ClassCreate, ClassResponse, ClassUpdate
 
 router = APIRouter(prefix="/classes", tags=["Class Management"])

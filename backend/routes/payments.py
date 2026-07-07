@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 import requests
 from fastapi import HTTPException, status
 
-from utils import FRONTEND_URL
+from services.utils import FRONTEND_URL
 
 logger = logging.getLogger(__name__)
 

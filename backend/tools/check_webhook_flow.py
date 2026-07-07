@@ -5,8 +5,8 @@ import sys
 
 # Run from backend/ directory so imports resolve
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from models import Transaction, WebhookLog
-from database import DATABASE_URL
+from app.models import Transaction, WebhookLog
+from app.database import DATABASE_URL
 
 if not DATABASE_URL:
     print("No DATABASE_URL configured in environment.")

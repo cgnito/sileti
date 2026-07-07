@@ -8,11 +8,10 @@ from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
 from sqlalchemy.orm import Session, selectinload
 from sqlalchemy import func
 
-import models
-import security
+from app import models, security
+from services import utils
 import schemas
-import utils
-from database import get_db
+from app.database import get_db
 
 router = APIRouter(prefix="/students", tags=["Student Management"])
 _UNSET = object()

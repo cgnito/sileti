@@ -5,7 +5,7 @@ from unittest.mock import patch
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-import models
+from app import models
 import schemas
 from routes import orgs, payments
 

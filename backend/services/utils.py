@@ -1,6 +1,7 @@
-import resend
 import os
 import re
+
+import resend
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -8,20 +9,21 @@ load_dotenv()
 resend.api_key = os.getenv("RESEND_API_KEY")
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://127.0.0.1:3000").rstrip("/")
 
+
 def sanitize_text(text: str) -> str:
-    if not text: 
+    if not text:
         return text
-    # collapse spaces and transform to title case format
-    return re.sub(r'\s+', ' ', text.strip()).title()
+    return re.sub(r"\s+", " ", text.strip()).title()
+
 
 def sanitize_short_code(text: str) -> str:
-    if not text: 
+    if not text:
         return text
-    # strict spaces stripping and capitalization alignment
-    return re.sub(r'\s+', '', text).upper()
+    return re.sub(r"\s+", "", text).upper()
+
 
 def sanitize_email(email: str) -> str:
-    if not email: 
+    if not email:
         return email
     return email.strip().lower()
 
@@ -54,9 +56,9 @@ def normalize_phone_number(phone: str | None) -> str | None:
 
     return f"+{digits}"
 
+
 def generate_short_code(name: str) -> str:
-    # structural blueprint for generating short code acronym fallback sequences
-    words = re.sub(r'[^a-zA-Z\s]', '', name).split()
+    words = re.sub(r"[^a-zA-Z\s]", "", name).split()
     if len(words) >= 3:
         code = "".join([word[0] for word in words[:4]])
     elif len(words) == 2:
@@ -66,9 +68,7 @@ def generate_short_code(name: str) -> str:
     return code.upper()
 
 
-
 def send_verification_email(email: str, token: str):
-    # verification onboarding pipeline email sequence
     verify_link = f"{FRONTEND_URL}/verify-email?token={token}"
     try:
         resend.Emails.send({
@@ -87,8 +87,8 @@ def send_verification_email(email: str, token: str):
     except Exception as e:
         print(f"verification email route failure: {e}")
 
+
 def send_staff_invitation_email(email: str, token: str, admin_name: str, org_name: str):
-    # set-password link strategy for delegated staff workflows
     invite_link = f"{FRONTEND_URL}/set-password?token={token}"
     try:
         resend.Emails.send({
@@ -107,6 +107,3 @@ def send_staff_invitation_email(email: str, token: str, admin_name: str, org_nam
         print(f"successfully sent invitation email to {email}")
     except Exception as e:
         print(f"staff profile activation transmission failed: {e}")
-
-
-#TODO: MAKE EMAILS FOLLOW DESIGN.MD
