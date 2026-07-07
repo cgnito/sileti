@@ -434,6 +434,101 @@ def verify_invoice_payment(
     return invoice
 
 
+@router.post("/invoices/{invoice_id}/transactions/{transaction_id}/reverse", response_model=schemas.InvoiceResponse)
+def reverse_invoice_transaction(
+    invoice_id: UUID,
+    transaction_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: security.AuthContext = Depends(security.RoleChecker(["admin", "staff"]))
+):
+    """
+    Mark an extra checkout attempt as refunded/reversed.
+    If the transaction had already been counted as a successful payment, unwind the invoice totals too.
+    """
+    invoice = db.query(models.Invoice).options(
+        selectinload(models.Invoice.items),
+        selectinload(models.Invoice.transactions),
+        joinedload(models.Invoice.student).joinedload(models.Student.school_class)
+    ).filter(
+        models.Invoice.id == invoice_id,
+        models.Invoice.org_id == current_user.org_id
+    ).first()
+
+    if not invoice:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invoice record not found")
+
+    transaction = db.query(models.Transaction).filter(
+        models.Transaction.id == transaction_id,
+        models.Transaction.invoice_id == invoice.id,
+        models.Transaction.org_id == current_user.org_id,
+    ).first()
+
+    if not transaction:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Transaction record not found")
+
+    if transaction.status == models.TransactionStatus.REVERSED.value:
+        return invoice
+
+    recorded_amount = Decimal(str(transaction.amount or 0))
+    if transaction.status == models.TransactionStatus.SUCCESS.value:
+        try:
+            invoice.paid_amount -= recorded_amount
+        except Exception:
+            invoice.paid_amount -= Decimal(str(recorded_amount))
+
+        if invoice.paid_amount < 0:
+            invoice.paid_amount = Decimal("0.00")
+        sync_invoice_status(invoice)
+
+    transaction.status = models.TransactionStatus.REVERSED.value
+
+    request_id = f"manual-reverse-{uuid4().hex}"
+    db.add(
+        models.WebhookLog(
+            request_id=request_id,
+            event_type="payment_reversal",
+            payment_flow="checkout",
+            gateway_reference=transaction.reference,
+            transaction_id=str(transaction.id),
+            raw_payload={
+                "source": "manual_admin_action",
+                "invoice_id": str(invoice.id),
+                "transaction_id": str(transaction.id),
+                "transaction_reference": transaction.reference,
+            },
+        )
+    )
+    db.add(
+        models.PaymentLedger(
+            request_id=request_id,
+            org_id=invoice.org_id,
+            invoice_id=invoice.id,
+            payment_flow="checkout",
+            event_type="payment_reversal",
+            gateway_reference=transaction.reference,
+            transaction_id=str(transaction.id),
+            amount=recorded_amount,
+            status=models.PaymentLedgerStatus.REVERSED.value,
+            payment_method=transaction.payment_method,
+            customer_name=(
+                f"{invoice.student.first_name} {invoice.student.last_name}"
+                if invoice.student
+                else None
+            ),
+            raw_payload={
+                "source": "manual_admin_action",
+                "invoice_id": str(invoice.id),
+                "transaction_id": str(transaction.id),
+                "transaction_reference": transaction.reference,
+            },
+        )
+    )
+
+    db.commit()
+    db.refresh(invoice)
+    return invoice
+
+
 
 # REMOVE OPTIONAL FEE FROM INVOICE (WITH AUTO STATUS SYNC)
 @router.delete("/invoices/{invoice_id}/items/{item_id}", response_model=schemas.InvoiceResponse)

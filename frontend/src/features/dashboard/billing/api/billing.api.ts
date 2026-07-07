@@ -79,6 +79,10 @@ export async function verifyInvoicePayment(invoiceId: string, transactionReferen
     : undefined);
 }
 
+export async function reverseInvoiceTransaction(invoiceId: string, transactionId: string): Promise<InvoiceDetail> {
+  return apiClient.post<InvoiceDetail>(`/billing/invoices/${invoiceId}/transactions/${transactionId}/reverse`);
+}
+
 export async function voidClassInvoices(
   classId: string,
   session: string,

@@ -2,11 +2,11 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { AlertCircle, Loader2, PlusCircle, RefreshCw } from "lucide-react";
+import { AlertCircle, Loader2, PlusCircle } from "lucide-react";
 import { Button } from "@/src/components/shared/Button";
 import { useInvoiceActions, useInvoiceList } from "@/src/features/dashboard/billing/hooks/billing.hooks";
-import { fetchClasses, verifyInvoicePayment } from "@/src/features/dashboard/billing/api/billing.api";
-import type { InvoiceTransaction, SchoolClass } from "@/src/features/dashboard/billing/types/billing.types";
+import { fetchClasses } from "@/src/features/dashboard/billing/api/billing.api";
+import type { SchoolClass } from "@/src/features/dashboard/billing/types/billing.types";
 import { DashboardEmptyState, DashboardHero, DashboardPageShell, DashboardPanel } from "@/src/components/dashboard/PageChrome";
 
 function formatCurrency(value: number | string | undefined | null) {
@@ -27,15 +27,6 @@ function formatDate(value?: string | null) {
   });
 }
 
-function getLatestTransactionReference(transactions?: InvoiceTransaction[] | null) {
-  if (!transactions?.length) return null;
-
-  return [...transactions]
-    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-    .map((transaction) => transaction.reference)
-    .find(Boolean) ?? null;
-}
-
 export default function BillingListPage() {
   const { invoices, isLoading, error, load } = useInvoiceList();
   const { voidClass, isLoading: isVoiding, error: voidError } = useInvoiceActions();
@@ -45,7 +36,6 @@ export default function BillingListPage() {
   const [sessionFilter, setSessionFilter] = useState("");
   const [termFilter, setTermFilter] = useState("");
   const [feedback, setFeedback] = useState<string | null>(null);
-  const [verifyingInvoiceId, setVerifyingInvoiceId] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -96,25 +86,6 @@ export default function BillingListPage() {
       });
     } catch {
       setFeedback(voidError ?? "We could not void that class batch.");
-    }
-  }
-
-  async function handleManualVerify(invoiceId: string, transactionReference?: string | null) {
-    setVerifyingInvoiceId(invoiceId);
-    setFeedback(null);
-    try {
-      await verifyInvoicePayment(invoiceId, transactionReference ?? undefined);
-      setFeedback("Payment rechecked successfully. The invoice has been refreshed.");
-      await load({
-        class_id: classFilter || undefined,
-        status: statusFilter || undefined,
-        session: sessionFilter || undefined,
-        term: termFilter || undefined,
-      });
-    } catch (err) {
-      setFeedback(err instanceof Error ? err.message : "We could not recheck that invoice yet.");
-    } finally {
-      setVerifyingInvoiceId(null);
     }
   }
 
@@ -201,8 +172,6 @@ export default function BillingListPage() {
               </div>
               <div className="divide-y divide-border/70 bg-white">
                 {invoices.map((invoice) => {
-                  const latestTransactionReference = getLatestTransactionReference(invoice.transactions);
-
                   return (
                     <div key={invoice.id} className="grid grid-cols-[1.4fr_0.8fr_0.8fr_0.8fr_0.7fr_0.8fr] items-center px-4 py-4 transition-colors hover:bg-surface-container-low">
                       <div className="min-w-0">
@@ -232,18 +201,6 @@ export default function BillingListPage() {
                         <Link href={`/dashboard/billing/invoices/${invoice.id}`} className="text-sm font-semibold text-primary underline underline-offset-4">
                           View details
                         </Link>
-                        {invoice.status !== "paid" ? (
-                        <button
-                          type="button"
-                          onClick={() => void handleManualVerify(invoice.id, latestTransactionReference)}
-                          disabled={verifyingInvoiceId === invoice.id}
-                          className="inline-flex items-center gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-[11px] font-semibold text-amber-800 transition-colors hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
-                          title={latestTransactionReference ? "Verify the latest recorded checkout reference for this invoice." : "No explicit reference found; the backend will try the invoice's recorded transaction(s)."}
-                        >
-                          <RefreshCw className={`h-3.5 w-3.5 ${verifyingInvoiceId === invoice.id ? "animate-spin" : ""}`} />
-                          {verifyingInvoiceId === invoice.id ? "Checking…" : "Recheck"}
-                        </button>
-                        ) : null}
                       </div>
                     </div>
                   );
