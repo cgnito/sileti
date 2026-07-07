@@ -120,6 +120,21 @@ class InvoiceDetailResponse(BaseModel):
         from_attributes = True
 
 
+class InvoiceTransactionResponse(BaseModel):
+    """Compact checkout transaction snapshot attached to an invoice."""
+    id: UUID
+    reference: str
+    amount: Decimal
+    status: str
+    payment_method: Optional[str] = None
+    checkout_url: Optional[str] = None
+    customer_phone: Optional[str] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
 class InvoiceSchoolClassResponse(BaseModel):
     """Nested class payload attached to invoice student snapshots."""
     id: UUID
@@ -161,9 +176,20 @@ class InvoiceResponse(BaseModel):
     due_date: Optional[date] = None
     items: list[InvoiceDetailResponse]  # Returns the full sub-item breakdown array
     student: Optional[InvoiceStudentResponse] = None
+    transactions: list[InvoiceTransactionResponse] = Field(default_factory=list)
 
     class Config:
         from_attributes = True
+
+
+class ManualInvoiceVerificationRequest(BaseModel):
+    """Optional explicit reference for a manual checkout recheck."""
+    transaction_reference: Optional[str] = Field(
+        None,
+        min_length=3,
+        max_length=100,
+        description="The exact orderReference or transaction reference to verify.",
+    )
 
 
 class AddOptionalItemRequest(BaseModel):

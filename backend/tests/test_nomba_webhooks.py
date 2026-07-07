@@ -164,11 +164,11 @@ class NombaWebhookTests(unittest.TestCase):
         self.assertEqual(float(ledger.amount), 500.0)
         self.assertEqual(ledger.invoice_id, invoice.id)
 
-    def test_checkout_webhook_prefers_merchant_tx_ref_when_order_reference_differs(self):
+    def test_checkout_webhook_uses_order_reference_even_when_merchant_tx_ref_differs(self):
         db = self.session_factory()
         order_ref = "order-ref-test-0001"
         merchant_ref = "mref-001"
-        _, invoice, transaction = self._seed_checkout_state(db, merchant_ref)
+        _, invoice, transaction = self._seed_checkout_state(db, order_ref)
         payload = self._build_checkout_payload(order_ref=order_ref, transaction_id="tx-checkout-002", merchant_tx_ref=merchant_ref)
         timestamp = "2026-02-06T10:21:56Z"
         signature = self._make_signature(payload, timestamp)
@@ -199,7 +199,7 @@ class NombaWebhookTests(unittest.TestCase):
 
         ledger = db.query(models.PaymentLedger).filter(models.PaymentLedger.request_id == payload.request_id).first()
         self.assertIsNotNone(ledger)
-        self.assertEqual(ledger.gateway_reference, merchant_ref)
+        self.assertEqual(ledger.gateway_reference, order_ref)
         self.assertEqual(ledger.status, models.PaymentLedgerStatus.SUCCESS.value)
 
     def test_duplicate_checkout_webhook_does_not_double_count_payment(self):

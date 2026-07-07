@@ -36,6 +36,17 @@ export interface InvoiceLineItem {
   amount: number | string;
 }
 
+export interface InvoiceTransaction {
+  id: string;
+  reference: string;
+  amount: number | string;
+  status: string;
+  payment_method?: string | null;
+  checkout_url?: string | null;
+  customer_phone?: string | null;
+  created_at: string;
+}
+
 export interface InvoiceSummary {
   id: string;
   student_id: string;
@@ -48,8 +59,10 @@ export interface InvoiceSummary {
   due_date?: string | null;
   items?: InvoiceLineItem[];
   student?: StudentSummary | null;
+  transactions?: InvoiceTransaction[];
 }
 
 export interface InvoiceDetail extends InvoiceSummary {
   items: InvoiceLineItem[];
+  transactions: InvoiceTransaction[];
 }

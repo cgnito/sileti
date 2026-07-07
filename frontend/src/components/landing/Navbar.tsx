@@ -12,6 +12,7 @@ const navLinks = [
 
 export function Navbar() {
   const user = useAuthStore((s) => s.user);
+  const onboardingProgress = useAuthStore((s) => s.onboardingProgress);
   const isHydrating = useAuthStore((s) => s.isHydrating);
 
   // Check if an auth token or session key exists in storage.
@@ -21,9 +22,11 @@ export function Navbar() {
   // Only show the skeleton if the store is hydrating AND a token actually exists to be validated.
   // If there's no token, we instantly know they are a guest.
   const showSkeleton = isHydrating && hasToken;
+  const dashboardHref = onboardingProgress?.is_completed ? "/dashboard" : "/dashboard/setup";
+  const dashboardLabel = onboardingProgress?.is_completed ? "Dashboard" : "Continue setup";
 
   return (
-    <header className="fixed top-0 left-0 w-full z-50 bg-surface-container-low px-4 py-10 md:px-margin-desktop h-16 flex justify-between items-center">
+    <header className="fixed top-0 left-0 z-50 flex h-16 w-full items-center justify-between border-b border-outline-variant/60 bg-surface-container-low/95 px-4 backdrop-blur md:px-margin-desktop">
       <div className="flex items-center gap-8">
         <Logo />
         <nav className="hidden md:flex items-center gap-6">
@@ -42,20 +45,20 @@ export function Navbar() {
       <div className="flex items-center gap-3">
         {showSkeleton ? (
           // Only flashes for returning users while Zustand finishes reading storage.
-          <div className="h-9 w-24 rounded-xl bg-surface-variant/60 animate-pulse" />
+          <div className="h-8 w-20 rounded-xl bg-surface-variant/60 animate-pulse md:h-9 md:w-24" />
         ) : !user ? (
           <>
-            <Button href="/login" variant="ghost" size="md" >
+            <Button href="/login" variant="ghost" size="sm" className="px-3 py-2 md:px-6 md:py-3">
               Sign in
             </Button>
-            <Button href="/signup" size="md" className="">
+            <Button href="/signup" size="sm" className="px-3 py-2 md:px-6 md:py-3">
               Get started
             </Button>
           </>
         ) 
         : (
-          <Button href="/dashboard" size="md" className="">
-            Go to dashboard
+          <Button href={dashboardHref} size="sm" className="px-3 py-2 md:px-6 md:py-3">
+            {dashboardLabel}
           </Button>
         )}
       </div>

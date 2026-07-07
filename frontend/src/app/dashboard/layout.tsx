@@ -152,7 +152,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
           </button>
         </div>
 
-        <div className="mt-6 flex-1 space-y-6 overflow-y-auto pr-1">
+        <div className="dashboard-sidebar-scroll mt-6 flex-1 space-y-6 overflow-y-auto pr-1">
           {visibleNavGroups.map((group) => (
             <div key={group.title}>
               <p className="mb-2 px-3 text-[10px] font-label uppercase tracking-[0.35em] text-white/30">{group.title}</p>

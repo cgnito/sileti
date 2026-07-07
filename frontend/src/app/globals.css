@@ -160,6 +160,31 @@ body {
   font-family: var(--font-body);
 }
 
+.dashboard-sidebar-scroll {
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.28) rgba(255, 255, 255, 0.08);
+}
+
+.dashboard-sidebar-scroll::-webkit-scrollbar {
+  width: 9px;
+}
+
+.dashboard-sidebar-scroll::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 999px;
+}
+
+.dashboard-sidebar-scroll::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, rgba(238, 189, 142, 0.7), rgba(181, 124, 67, 0.9));
+  border-radius: 999px;
+  border: 2px solid rgba(35, 26, 17, 0.92);
+}
+
+.dashboard-sidebar-scroll::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, rgba(255, 220, 189, 0.9), rgba(181, 124, 67, 1));
+}
+
 /* Marquee animation used in the social-proof strip */
 @keyframes marquee-scroll {
   0% {

@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuthStore } from "@/src/features/auth/store/useAuthStore";
+import { DashboardPageShell, DashboardPanel } from "@/src/components/dashboard/PageChrome";
 
 type RequireRoleProps = {
   allowedRoles?: Array<"admin" | "staff">;
@@ -31,7 +32,16 @@ export function RequireRole({ allowedRoles = ["admin"], redirectTo = "/dashboard
   }, [isAllowed, isHydrating, redirectTo, router, user]);
 
   if (isHydrating) {
-    return null;
+    return (
+      <DashboardPageShell>
+        <DashboardPanel className="grid gap-3">
+          <div className="h-6 w-40 animate-pulse rounded-full bg-surface-container-low" />
+          <div className="h-10 w-72 animate-pulse rounded-2xl bg-surface-container-low" />
+          <div className="h-4 w-full animate-pulse rounded-full bg-surface-container-low" />
+          <div className="h-4 w-5/6 animate-pulse rounded-full bg-surface-container-low" />
+        </DashboardPanel>
+      </DashboardPageShell>
+    );
   }
 
   if (!user || !isAllowed) {

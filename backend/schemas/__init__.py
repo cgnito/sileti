@@ -39,7 +39,9 @@ from .fees import (
     InvoiceGenerationRequest,
     AddOptionalItemRequest,
     InvoiceDetailResponse,
+    InvoiceTransactionResponse,
     InvoiceResponse,
+    ManualInvoiceVerificationRequest,
     InitializePaymentResponse
 )
 from .webhooks import WebhookPayload
@@ -85,7 +87,9 @@ __all__ = [
     "InvoiceGenerationRequest",
     "AddOptionalItemRequest",
     "InvoiceDetailResponse",
+    "InvoiceTransactionResponse",
     "InvoiceResponse",
+    "ManualInvoiceVerificationRequest",
     "InitializePaymentResponse",
     "WebhookPayload"
 ]

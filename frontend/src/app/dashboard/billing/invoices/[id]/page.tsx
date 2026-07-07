@@ -3,11 +3,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { AlertCircle, Loader2, PlusCircle, Trash2, XCircle } from "lucide-react";
+import { AlertCircle, Loader2, PlusCircle, RefreshCw, Trash2, XCircle } from "lucide-react";
 import { Button } from "@/src/components/shared/Button";
-import { addInvoiceItem, fetchFeeTemplates, removeInvoiceItem, voidInvoice } from "@/src/features/dashboard/billing/api/billing.api";
+import { addInvoiceItem, fetchFeeTemplates, removeInvoiceItem, verifyInvoicePayment, voidInvoice } from "@/src/features/dashboard/billing/api/billing.api";
 import { useInvoiceDetail } from "@/src/features/dashboard/billing/hooks/billing.hooks";
-import type { FeeTemplate } from "@/src/features/dashboard/billing/types/billing.types";
+import type { FeeTemplate, InvoiceTransaction } from "@/src/features/dashboard/billing/types/billing.types";
 import { DashboardHero, DashboardPageShell, DashboardPanel } from "@/src/components/dashboard/PageChrome";
 
 function formatCurrency(value: number | string | undefined | null) {
@@ -17,6 +17,15 @@ function formatCurrency(value: number | string | undefined | null) {
     currency: "NGN",
     maximumFractionDigits: 0,
   }).format(numeric);
+}
+
+function getLatestTransactionReference(transactions?: InvoiceTransaction[] | null) {
+  if (!transactions?.length) return null;
+
+  return [...transactions]
+    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+    .map((transaction) => transaction.reference)
+    .find(Boolean) ?? null;
 }
 
 export default function InvoiceDetailPage() {
@@ -68,6 +77,11 @@ export default function InvoiceDetailPage() {
     return (invoice.items ?? []).reduce((sum, item) => sum + Number(item.amount ?? 0), 0);
   }, [invoice]);
 
+  const latestTransactionReference = useMemo(
+    () => getLatestTransactionReference(invoice?.transactions),
+    [invoice?.transactions],
+  );
+
   async function handleAddItem() {
     if (!invoiceId || !selectedItemId) return;
     setIsMutating(true);
@@ -111,6 +125,20 @@ export default function InvoiceDetailPage() {
     }
   }
 
+  async function handleManualVerify() {
+    if (!invoiceId || !latestTransactionReference) return;
+    setIsMutating(true);
+    setActionError(null);
+    try {
+      await verifyInvoicePayment(invoiceId, latestTransactionReference);
+      await load();
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "We could not recheck this payment right now.");
+    } finally {
+      setIsMutating(false);
+    }
+  }
+
   return (
     <DashboardPageShell>
       <DashboardHero
@@ -118,9 +146,21 @@ export default function InvoiceDetailPage() {
         title="Invoice details"
         description="Review the invoice breakdown, add optional charges, or void the statement."
         action={(
-          <Link href="/dashboard/billing" className="text-sm font-medium text-primary underline underline-offset-4">
-            Back to invoices
-          </Link>
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              onClick={() => void handleManualVerify()}
+              disabled={isMutating || invoice?.status === "paid" || !latestTransactionReference}
+              className="inline-flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm font-semibold text-amber-800 transition-colors hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
+              title={latestTransactionReference ? "Verify the latest recorded checkout reference for this invoice." : "No transaction reference is available to verify yet."}
+            >
+              <RefreshCw className="h-4 w-4" />
+              Recheck payment
+            </button>
+            <Link href="/dashboard/billing" className="text-sm font-medium text-primary underline underline-offset-4">
+              Back to invoices
+            </Link>
+          </div>
         )}
       />
 
@@ -181,7 +221,10 @@ export default function InvoiceDetailPage() {
                 <p className="mt-1 text-sm text-on-surface-variant">
                   Add optional charges from the invoice template before the bill is settled.
                 </p>
-              </div>
+                  <p className="mt-2 text-xs text-on-surface-variant">
+                  If the webhook did not settle this invoice yet, you can use the optional payment recheck above for the latest recorded checkout reference.
+                  </p>
+                </div>
               <div className="flex flex-wrap items-center gap-3">
                 <select
                   value={selectedItemId}

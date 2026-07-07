@@ -73,6 +73,12 @@ export async function voidInvoice(invoiceId: string): Promise<{ message: string 
   return apiClient.post<{ message: string }>(`/billing/invoices/${invoiceId}/void`);
 }
 
+export async function verifyInvoicePayment(invoiceId: string, transactionReference?: string): Promise<InvoiceDetail> {
+  return apiClient.post<InvoiceDetail>(`/billing/invoices/${invoiceId}/verify-payment`, transactionReference
+    ? { transaction_reference: transactionReference }
+    : undefined);
+}
+
 export async function voidClassInvoices(
   classId: string,
   session: string,

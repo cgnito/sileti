@@ -47,9 +47,8 @@ def _get_data_blocks(payload: WebhookPayload) -> tuple[dict[str, Any], dict[str,
 
 def _resolve_checkout_reference(data: dict, fallback: str | None = None) -> str | None:
     for key in (
-        "merchantTxRef",
-        "onlineCheckoutOrderReference",
         "orderReference",
+        "onlineCheckoutOrderReference",
         "onlineCheckoutOrderId",
     ):
         value = data.get(key)
@@ -233,7 +232,7 @@ async def nomba_webhook_handler(
     gateway_reference = None
 
     if payload.event_type == "payment_success":
-        order_ref = _resolve_checkout_reference(order_data, transaction_data.get("merchantTxRef"))
+        order_ref = _resolve_checkout_reference(order_data, _resolve_checkout_reference(transaction_data))
 
         verification = {}
         if transaction_id:
@@ -345,8 +344,7 @@ async def nomba_webhook_handler(
         logger.info("Processed checkout webhook for order %s with Nomba status %s", resolved_order_ref, status_from_nomba)
 
         if status_from_nomba == "SUCCESS" and db_transaction.invoice_id:
-            if background_tasks is not None:
-                background_tasks.add_task(notifications.notify_payment_received, db_transaction.invoice_id)
+            notifications.notify_payment_received(db_transaction.invoice_id)
 
     elif payload.event_type == "payment_failed":
         gateway_reference = _resolve_checkout_reference(order_data, _resolve_checkout_reference(transaction_data, transaction_id))

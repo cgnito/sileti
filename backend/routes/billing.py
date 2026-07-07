@@ -1,13 +1,14 @@
 from decimal import Decimal
 from datetime import date
 from typing import Optional
-from uuid import UUID
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
+from uuid import UUID, uuid4
+from fastapi import APIRouter, BackgroundTasks, Body, Depends, HTTPException, status
 from sqlalchemy.orm import Session, selectinload, joinedload
 
 from app import models, security
 import schemas
 from services import notifications
+from . import payments
 from app.database import get_db
 
 router = APIRouter(prefix="/billing", tags=["Billing Engine"])
@@ -42,6 +43,19 @@ def sync_invoice_status(invoice: models.Invoice) -> None:
         invoice.status = models.InvoiceStatus.PAID
     else:
         invoice.status = models.InvoiceStatus.PARTIAL
+
+
+def _resolve_verified_amount(data: dict, fallback=None):
+    for key in (
+        "onlineCheckoutAmount",
+        "amount",
+        "transactionAmount",
+    ):
+        value = data.get(key)
+        if value is not None and value != "":
+            return value
+
+    return fallback
 
 
 
@@ -142,7 +156,7 @@ def generate_invoices(
 
     db.commit()
     if created_invoice_ids:
-        background_tasks.add_task(notifications.notify_invoices_created, created_invoice_ids)
+        notifications.notify_invoices_created(created_invoice_ids)
     return {
         "message": f"Successfully generated {invoices_created} invoices for the class.",
         "count": invoices_created
@@ -240,6 +254,7 @@ def append_optional_fee_to_invoice(
     """
     invoice = db.query(models.Invoice).options(
         selectinload(models.Invoice.items),
+        selectinload(models.Invoice.transactions),
         joinedload(models.Invoice.student).joinedload(models.Student.school_class)
     ).filter(
         models.Invoice.id == invoice_id,
@@ -289,12 +304,134 @@ def append_optional_fee_to_invoice(
     db.commit()
     updated_invoice = db.query(models.Invoice).options(
         selectinload(models.Invoice.items),
+        selectinload(models.Invoice.transactions),
         joinedload(models.Invoice.student).joinedload(models.Student.school_class)
     ).filter(
         models.Invoice.id == invoice_id,
         models.Invoice.org_id == current_user.org_id
     ).first()
     return updated_invoice
+
+
+@router.post("/invoices/{invoice_id}/verify-payment", response_model=schemas.InvoiceResponse)
+def verify_invoice_payment(
+    invoice_id: UUID,
+    request: schemas.ManualInvoiceVerificationRequest | None = Body(default=None),
+    db: Session = Depends(get_db),
+    current_user: security.AuthContext = Depends(security.RoleChecker(["admin", "staff"]))
+):
+    """
+    Manually re-check a checkout payment against Nomba and apply the result if it succeeded.
+    This is a fallback path for when the webhook has not updated the invoice yet.
+    """
+    invoice = db.query(models.Invoice).options(
+        selectinload(models.Invoice.items),
+        selectinload(models.Invoice.transactions),
+        joinedload(models.Invoice.student).joinedload(models.Student.school_class)
+    ).filter(
+        models.Invoice.id == invoice_id,
+        models.Invoice.org_id == current_user.org_id
+    ).first()
+
+    if not invoice:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invoice record not found")
+
+    requested_reference = (request.transaction_reference.strip() if request and request.transaction_reference else None)
+
+    if requested_reference:
+        transaction = db.query(models.Transaction).filter(
+            models.Transaction.invoice_id == invoice.id,
+            models.Transaction.org_id == current_user.org_id,
+            models.Transaction.reference == requested_reference,
+        ).first()
+    else:
+        invoice_transactions = sorted(
+            list(invoice.transactions or []),
+            key=lambda item: item.created_at.timestamp() if item.created_at else float("-inf"),
+            reverse=True,
+        )
+        if len(invoice_transactions) == 1:
+            transaction = invoice_transactions[0]
+        elif len(invoice_transactions) == 0:
+            transaction = None
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Multiple checkout attempts exist for this invoice. Pass transaction_reference to verify a specific one.",
+            )
+
+    if not transaction:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No matching checkout transaction exists for this invoice."
+        )
+
+    if requested_reference and transaction.reference != requested_reference:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="The provided transaction reference does not belong to this invoice.",
+        )
+
+    verification = payments.verify_checkout_transaction(transaction.reference)
+    status_from_nomba = (verification.get("status") or "").upper()
+    if status_from_nomba != "SUCCESS":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Nomba still reports this payment as {status_from_nomba or 'PENDING'}."
+        )
+
+    existing_success = db.query(models.PaymentLedger).filter(
+        models.PaymentLedger.payment_flow == "checkout",
+        models.PaymentLedger.invoice_id == invoice.id,
+        models.PaymentLedger.gateway_reference == transaction.reference,
+        models.PaymentLedger.status == models.PaymentLedgerStatus.SUCCESS.value,
+    ).first()
+
+    if existing_success and transaction.status == models.TransactionStatus.SUCCESS.value:
+        return invoice
+
+    received_amount = _resolve_verified_amount(verification, transaction.amount)
+
+    transaction.status = models.TransactionStatus.SUCCESS.value
+    transaction.payment_method = verification.get("paymentMethod") or verification.get("onlineCheckoutPaymentMethod") or transaction.payment_method
+
+    try:
+        invoice.paid_amount += Decimal(str(received_amount))
+    except Exception:
+        invoice.paid_amount += received_amount
+    sync_invoice_status(invoice)
+
+    request_id = f"manual-verify-{uuid4().hex}"
+    db.add(
+        models.WebhookLog(
+            request_id=request_id,
+            event_type="payment_success",
+            payment_flow="checkout",
+            gateway_reference=transaction.reference,
+            transaction_id=verification.get("transactionId") or verification.get("id"),
+            raw_payload=verification,
+        )
+    )
+    db.add(
+        models.PaymentLedger(
+            request_id=request_id,
+            org_id=invoice.org_id,
+            invoice_id=invoice.id,
+            payment_flow="checkout",
+            event_type="payment_success",
+            gateway_reference=transaction.reference,
+            transaction_id=verification.get("transactionId") or verification.get("id"),
+            amount=Decimal(str(received_amount)),
+            status=models.PaymentLedgerStatus.SUCCESS.value,
+            payment_method=transaction.payment_method,
+            customer_name=verification.get("narration") or verification.get("senderName") or verification.get("customerName"),
+            raw_payload=verification,
+        )
+    )
+
+    db.commit()
+    db.refresh(invoice)
+    return invoice
 
 
 
@@ -342,6 +479,7 @@ def remove_fee_item_from_invoice(
     db.commit()
     updated_invoice = db.query(models.Invoice).options(
         selectinload(models.Invoice.items),
+        selectinload(models.Invoice.transactions),
         joinedload(models.Invoice.student).joinedload(models.Student.school_class)
     ).filter(
         models.Invoice.id == invoice_id,
@@ -366,6 +504,7 @@ def list_invoices(
     """
     query = db.query(models.Invoice).options(
         selectinload(models.Invoice.items),
+        selectinload(models.Invoice.transactions),
         joinedload(models.Invoice.student).joinedload(models.Student.school_class)  # Optimization: Eagerly map student identifiers and class snapshots
     ).filter(models.Invoice.org_id == current_user.org_id)
 
@@ -403,6 +542,7 @@ def get_single_invoice(
     """
     invoice = db.query(models.Invoice).options(
         selectinload(models.Invoice.items),
+        selectinload(models.Invoice.transactions),
         joinedload(models.Invoice.student).joinedload(models.Student.school_class)  # Trace individual student profiles transparently
     ).filter(
         models.Invoice.id == invoice_id,
