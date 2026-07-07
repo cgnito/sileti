@@ -3,7 +3,20 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { AlertCircle, CheckCircle2, CircleDot, Loader2, PlusCircle, RefreshCw, RotateCcw, Trash2, XCircle } from "lucide-react";
+import {
+  AlertCircle,
+  Check,
+  CheckCircle2,
+  Circle,
+  CircleDot,
+  Copy,
+  Loader2,
+  PlusCircle,
+  RefreshCw,
+  RotateCcw,
+  Trash2,
+  XCircle,
+} from "lucide-react";
 import { Button } from "@/src/components/shared/Button";
 import { addInvoiceItem, fetchFeeTemplates, removeInvoiceItem, reverseInvoiceTransaction, verifyInvoicePayment, voidInvoice } from "@/src/features/dashboard/billing/api/billing.api";
 import { useInvoiceDetail } from "@/src/features/dashboard/billing/hooks/billing.hooks";
@@ -19,15 +32,6 @@ function formatCurrency(value: number | string | undefined | null) {
   }).format(numeric);
 }
 
-function getLatestTransactionReference(transactions?: InvoiceTransaction[] | null) {
-  if (!transactions?.length) return null;
-
-  return [...transactions]
-    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-    .map((transaction) => transaction.reference)
-    .find(Boolean) ?? null;
-}
-
 function formatShortDateTime(value?: string | null) {
   if (!value) return "—";
 
@@ -37,16 +41,63 @@ function formatShortDateTime(value?: string | null) {
   }).format(new Date(value));
 }
 
+function statusTone(status?: string | null) {
+  const normalized = (status ?? "").toUpperCase();
+  if (normalized === "SUCCESS" || normalized === "PAID") return "border-green-200 bg-green-50 text-green-700";
+  if (normalized === "FAILED") return "border-rose-200 bg-rose-50 text-rose-700";
+  if (normalized === "REVERSED" || normalized === "VOIDED") return "border-slate-200 bg-slate-100 text-slate-700";
+  return "border-amber-200 bg-amber-50 text-amber-700";
+}
+
+function CopyButton({ value, label }: { value: string; label: string }) {
+  const [copied, setCopied] = useState(false);
+
+  async function handleCopy() {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1600);
+    } catch {
+      // Clipboard access can fail silently (permissions/insecure context); no need to surface an error for a convenience action.
+    }
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={(event) => {
+        event.stopPropagation();
+        void handleCopy();
+      }}
+      className="inline-flex items-center gap-1 rounded-md border border-transparent p-1 text-on-surface-variant transition-colors hover:border-border hover:bg-surface-container-low focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+      aria-label={`Copy ${label}`}
+      title={`Copy ${label}`}
+    >
+      {copied ? <Check className="h-3.5 w-3.5 text-primary" /> : <Copy className="h-3.5 w-3.5" />}
+    </button>
+  );
+}
+
 export default function InvoiceDetailPage() {
   const params = useParams<{ id: string }>();
   const invoiceId = params?.id;
   const { invoice, isLoading, error, load } = useInvoiceDetail(invoiceId);
   const [templates, setTemplates] = useState<FeeTemplate[]>([]);
   const [selectedItemId, setSelectedItemId] = useState("");
-  const [selectedTransactionReference, setSelectedTransactionReference] = useState("");
   const [actionError, setActionError] = useState<string | null>(null);
-  const [isMutating, setIsMutating] = useState(false);
+  const [actionSuccess, setActionSuccess] = useState<string | null>(null);
+
+  // Per-action loading state, scoped to the specific row/transaction it belongs to.
+  // No shared "isMutating" flag — one card's recheck spinner never disables a
+  // completely unrelated card's reverse button.
+  const [isAddingItem, setIsAddingItem] = useState(false);
+  const [removingItemId, setRemovingItemId] = useState<string | null>(null);
+  const [isVoiding, setIsVoiding] = useState(false);
+  const [verifyingReference, setVerifyingReference] = useState<string | null>(null);
   const [reversingTransactionId, setReversingTransactionId] = useState<string | null>(null);
+  const [confirmingVoid, setConfirmingVoid] = useState(false);
+
+  const isMutating = isAddingItem || Boolean(removingItemId) || isVoiding || Boolean(verifyingReference) || Boolean(reversingTransactionId);
 
   useEffect(() => {
     void load();
@@ -64,6 +115,16 @@ export default function InvoiceDetailPage() {
 
     void loadTemplates();
   }, []);
+
+  useEffect(() => {
+    if (!actionSuccess) return;
+    const timeout = window.setTimeout(() => setActionSuccess(null), 3000);
+    return () => window.clearTimeout(timeout);
+  }, [actionSuccess]);
+
+  useEffect(() => {
+    setConfirmingVoid(false);
+  }, [invoiceId]);
 
   const availableOptionalItems = useMemo(() => {
     if (!invoice) return [];
@@ -88,74 +149,57 @@ export default function InvoiceDetailPage() {
     return (invoice.items ?? []).reduce((sum, item) => sum + Number(item.amount ?? 0), 0);
   }, [invoice]);
 
-  const latestTransactionReference = useMemo(
-    () => getLatestTransactionReference(invoice?.transactions),
-    [invoice?.transactions],
-  );
-
-  const selectedTransaction = useMemo(
-    () => invoice?.transactions?.find((transaction) => transaction.reference === selectedTransactionReference) ?? null,
-    [invoice?.transactions, selectedTransactionReference],
-  );
-
-  useEffect(() => {
-    const transactions = invoice?.transactions ?? [];
-    if (!transactions.length) {
-      setSelectedTransactionReference("");
-      return;
-    }
-
-    const preferred =
-      transactions.find((transaction) => transaction.status?.toUpperCase() === "PENDING")?.reference
-      ?? transactions.find((transaction) => transaction.status?.toUpperCase() === "FAILED")?.reference
-      ?? transactions.find((transaction) => transaction.status?.toUpperCase() === "SUCCESS")?.reference
-      ?? latestTransactionReference
-      ?? transactions[0]?.reference
-      ?? "";
-
-    setSelectedTransactionReference(preferred);
-  }, [invoice?.transactions, latestTransactionReference]);
-
   async function handleAddItem() {
     if (!invoiceId || !selectedItemId) return;
-    setIsMutating(true);
+    setIsAddingItem(true);
     setActionError(null);
     try {
+      const addedItem = templates
+        .flatMap((template) => template.line_items)
+        .find((item) => item.id === selectedItemId);
       await addInvoiceItem(invoiceId, selectedItemId);
       setSelectedItemId("");
       await load();
+      setActionSuccess(addedItem ? `${addedItem.name} added to the invoice.` : "Fee added to the invoice.");
     } catch (err) {
       setActionError(err instanceof Error ? err.message : "We could not add that optional fee.");
     } finally {
-      setIsMutating(false);
+      setIsAddingItem(false);
     }
   }
 
   async function handleRemoveItem(itemId: string) {
     if (!invoiceId) return;
-    setIsMutating(true);
+    setRemovingItemId(itemId);
     setActionError(null);
     try {
       await removeInvoiceItem(invoiceId, itemId);
       await load();
+      setActionSuccess("Line item removed.");
     } catch (err) {
       setActionError(err instanceof Error ? err.message : "We could not remove that line item.");
     } finally {
-      setIsMutating(false);
+      setRemovingItemId(null);
     }
   }
 
   async function handleVoid() {
-    if (!invoiceId || !window.confirm("Void this invoice?")) return;
-    setIsMutating(true);
+    if (!invoiceId) return;
+    if (!confirmingVoid) {
+      setConfirmingVoid(true);
+      return;
+    }
+    setIsVoiding(true);
     setActionError(null);
     try {
       await voidInvoice(invoiceId);
       await load();
+      setActionSuccess("Invoice voided.");
     } catch (err) {
       setActionError(err instanceof Error ? err.message : "We could not void this invoice.");
     } finally {
-      setIsMutating(false);
+      setIsVoiding(false);
+      setConfirmingVoid(false);
     }
   }
 
@@ -166,6 +210,7 @@ export default function InvoiceDetailPage() {
     try {
       await reverseInvoiceTransaction(invoiceId, transactionId);
       await load();
+      setActionSuccess("Transaction marked as refunded.");
     } catch (err) {
       setActionError(err instanceof Error ? err.message : "We could not reverse that transaction right now.");
     } finally {
@@ -173,18 +218,18 @@ export default function InvoiceDetailPage() {
     }
   }
 
-  async function handleManualVerify() {
-    const targetReference = selectedTransactionReference || latestTransactionReference;
-    if (!invoiceId || !targetReference) return;
-    setIsMutating(true);
+  async function handleManualVerify(reference: string) {
+    if (!invoiceId || !reference) return;
+    setVerifyingReference(reference);
     setActionError(null);
     try {
-      await verifyInvoicePayment(invoiceId, targetReference);
+      await verifyInvoicePayment(invoiceId, reference);
       await load();
+      setActionSuccess(`Payment status rechecked for ${reference}.`);
     } catch (err) {
       setActionError(err instanceof Error ? err.message : "We could not recheck this payment right now.");
     } finally {
-      setIsMutating(false);
+      setVerifyingReference(null);
     }
   }
 
@@ -195,44 +240,65 @@ export default function InvoiceDetailPage() {
         title="Invoice details"
         description="Review the invoice breakdown, add optional charges, or void the statement."
         action={(
-          <div className="flex flex-wrap items-center gap-3">
-            <button
-              type="button"
-              onClick={() => void handleManualVerify()}
-              disabled={isMutating || invoice?.status === "paid" || !selectedTransactionReference}
-              className="inline-flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm font-semibold text-amber-800 transition-colors hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
-              title={selectedTransactionReference ? "Verify the selected checkout attempt for this invoice." : "No transaction reference is available to verify yet."}
-            >
-              <RefreshCw className="h-4 w-4" />
-              Recheck payment
-            </button>
-            <Link href="/dashboard/billing" className="text-sm font-medium text-primary underline underline-offset-4">
-              Back to invoices
-            </Link>
-          </div>
+          <Link
+            href="/dashboard/billing"
+            className="text-sm font-medium text-primary underline underline-offset-4 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+          >
+            Back to invoices
+          </Link>
         )}
       />
 
+      {actionSuccess ? (
+        <div
+          role="status"
+          className="flex items-center gap-2 rounded-[1.35rem] border border-primary/20 bg-primary/5 px-4 py-3 text-sm font-medium text-primary"
+        >
+          <CheckCircle2 className="h-4 w-4 shrink-0" />
+          {actionSuccess}
+        </div>
+      ) : null}
+
       {isLoading ? (
-        <DashboardPanel>
-          <div className="text-sm text-on-surface-variant">
-            <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
-            Loading invoice…
+        <div className="grid gap-6">
+          <DashboardPanel>
+            <div className="h-24 animate-pulse rounded-xl bg-surface-container-low" />
+          </DashboardPanel>
+          <div className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
+            <DashboardPanel>
+              <div className="h-64 animate-pulse rounded-xl bg-surface-container-low" />
+            </DashboardPanel>
+            <DashboardPanel>
+              <div className="h-64 animate-pulse rounded-xl bg-surface-container-low" />
+            </DashboardPanel>
           </div>
-        </DashboardPanel>
+        </div>
       ) : error ? (
         <DashboardPanel className="border-error/20 bg-error/10">
-          <div className="text-sm text-error">
-            <AlertCircle className="mr-2 inline h-4 w-4" />
+          <div className="flex items-start gap-2 text-sm text-error">
+            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
             {error}
           </div>
         </DashboardPanel>
       ) : invoice ? (
         <>
-          <DashboardPanel>
+          <DashboardPanel className="relative overflow-hidden">
+            {invoice.status === "voided" ? (
+              <span
+                aria-hidden
+                className="pointer-events-none absolute right-6 top-6 select-none rounded-md border-4 border-error/50 px-4 py-1 font-label text-lg font-bold uppercase tracking-[0.3em] text-error/50"
+                style={{ transform: "rotate(-10deg)" }}
+              >
+                Void
+              </span>
+            ) : null}
+
             <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
               <div>
-                <p className="text-sm font-medium text-on-surface-variant">Invoice #{invoice.id.slice(0, 8)}</p>
+                <div className="flex items-center gap-1.5">
+                  <p className="font-label text-sm font-medium text-on-surface-variant">Invoice #{invoice.id.slice(0, 8)}</p>
+                  <CopyButton value={invoice.id} label="invoice ID" />
+                </div>
                 <h2 className="mt-2 font-headline text-2xl text-on-surface">
                   {invoice.student?.first_name} {invoice.student?.last_name}
                 </h2>
@@ -241,24 +307,26 @@ export default function InvoiceDetailPage() {
                   {invoice.student?.school_class?.name ?? "Unassigned class"}
                 </p>
               </div>
-              <div className="rounded-xl border border-border/70 bg-surface-container-low px-4 py-3">
-                <p className="text-sm text-on-surface-variant">Current total</p>
-                <p className="mt-1 font-headline text-2xl text-on-surface">{formatCurrency(runningTotal)}</p>
+              <div className="rounded-xl border border-border/70 bg-surface-container-low px-4 py-3 text-right">
+                <p className="font-label text-xs uppercase tracking-[0.2em] text-on-surface-variant">Current total</p>
+                <p className="mt-1 font-headline text-2xl tabular-nums text-on-surface">{formatCurrency(runningTotal)}</p>
               </div>
             </div>
 
-            <div className="mt-6 grid gap-4 md:grid-cols-3">
+            <div className="mt-6 grid gap-4 sm:grid-cols-3">
               <div className="rounded-xl border border-border/70 bg-surface-container-low p-4">
-                <p className="text-sm text-on-surface-variant">Status</p>
-                <p className="mt-2 font-semibold text-on-surface">{invoice.status}</p>
+                <p className="font-label text-xs uppercase tracking-[0.2em] text-on-surface-variant">Status</p>
+                <span className={`mt-2 inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold capitalize ${statusTone(invoice.status)}`}>
+                  {invoice.status}
+                </span>
               </div>
               <div className="rounded-xl border border-border/70 bg-surface-container-low p-4">
-                <p className="text-sm text-on-surface-variant">Due date</p>
-                <p className="mt-2 font-semibold text-on-surface">{invoice.due_date ? new Date(invoice.due_date).toLocaleDateString("en-NG") : "—"}</p>
+                <p className="font-label text-xs uppercase tracking-[0.2em] text-on-surface-variant">Due date</p>
+                <p className="mt-2 font-semibold tabular-nums text-on-surface">{invoice.due_date ? new Date(invoice.due_date).toLocaleDateString("en-NG") : "—"}</p>
               </div>
               <div className="rounded-xl border border-border/70 bg-surface-container-low p-4">
-                <p className="text-sm text-on-surface-variant">Paid amount</p>
-                <p className="mt-2 font-semibold text-on-surface">{formatCurrency(invoice.paid_amount)}</p>
+                <p className="font-label text-xs uppercase tracking-[0.2em] text-on-surface-variant">Paid amount</p>
+                <p className="mt-2 font-semibold tabular-nums text-on-surface">{formatCurrency(invoice.paid_amount)}</p>
               </div>
             </div>
           </DashboardPanel>
@@ -269,73 +337,44 @@ export default function InvoiceDetailPage() {
                 <div>
                   <h3 className="font-headline text-xl text-on-surface">Checkout attempts</h3>
                   <p className="mt-1 text-sm text-on-surface-variant">
-                    Pick the exact transaction you want to verify or reverse.
+                    Each attempt carries its own actions — verify or reverse right where you're looking.
                   </p>
                 </div>
                 {invoice.transactions?.length ? (
-                  <div className="rounded-full border border-border bg-surface-container-low px-3 py-1 text-xs font-semibold text-on-surface-variant">
+                  <div className="font-label rounded-full border border-border bg-surface-container-low px-3 py-1 text-xs font-semibold text-on-surface-variant">
                     {invoice.transactions.length} attempt{invoice.transactions.length === 1 ? "" : "s"} recorded
                   </div>
                 ) : null}
               </div>
 
-              {selectedTransaction ? (
-                <div className="mt-4 rounded-2xl border border-primary/20 bg-primary/5 p-4">
-                  <p className="text-xs font-semibold uppercase tracking-[0.25em] text-primary">Selected attempt</p>
-                  <div className="mt-3 grid gap-3 md:grid-cols-3">
-                    <div>
-                      <p className="text-xs uppercase tracking-[0.2em] text-on-surface-variant">Reference</p>
-                      <p className="mt-1 font-semibold text-on-surface">{selectedTransaction.reference}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs uppercase tracking-[0.2em] text-on-surface-variant">Status</p>
-                      <p className="mt-1 font-semibold text-on-surface">{selectedTransaction.status}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs uppercase tracking-[0.2em] text-on-surface-variant">Amount</p>
-                      <p className="mt-1 font-semibold text-on-surface">{formatCurrency(selectedTransaction.amount)}</p>
-                    </div>
-                  </div>
-                </div>
-              ) : null}
-
               {invoice.transactions?.length ? (
                 <div className="mt-4 grid gap-3">
                   {invoice.transactions.map((transaction) => {
                     const status = transaction.status.toUpperCase();
-                    const isSelected = selectedTransactionReference === transaction.reference;
                     const isReversing = reversingTransactionId === transaction.id;
-                    const statusTone =
-                      status === "SUCCESS"
-                        ? "border-green-200 bg-green-50 text-green-700"
-                        : status === "FAILED"
-                          ? "border-rose-200 bg-rose-50 text-rose-700"
-                          : status === "REVERSED"
-                            ? "border-slate-200 bg-slate-100 text-slate-700"
-                            : "border-amber-200 bg-amber-50 text-amber-700";
+                    const isVerifying = verifyingReference === transaction.reference;
+                    // Recheck only makes sense while the outcome is still uncertain.
+                    const showRecheck = status === "PENDING" || status === "FAILED";
+                    // Reversing only makes sense once money has actually moved or is held.
+                    const showReverse = status === "SUCCESS" || status === "PENDING";
+                    const needsAttention = showRecheck;
 
                     return (
-                      <button
+                      <div
                         key={transaction.id}
-                        type="button"
-                        onClick={() => setSelectedTransactionReference(transaction.reference)}
-                        className={`flex w-full flex-col gap-3 rounded-2xl border p-4 text-left transition-all hover:-translate-y-0.5 hover:shadow-sm ${
-                          isSelected
-                            ? "border-primary bg-primary/5 shadow-sm"
-                            : "border-border/70 bg-white"
-                        }`}
+                        className="flex w-full flex-col gap-3 rounded-2xl border border-border/70 bg-white p-4"
                       >
                         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                           <div className="min-w-0">
                             <div className="flex flex-wrap items-center gap-2">
-                              <p className="font-semibold text-on-surface">{transaction.reference}</p>
-                              <span className={`inline-flex rounded-full border px-2.5 py-1 text-[11px] font-semibold ${statusTone}`}>
+                              <p className="truncate font-semibold text-on-surface">{transaction.reference}</p>
+                              <CopyButton value={transaction.reference} label="reference" />
+                              <span className={`inline-flex shrink-0 rounded-full border px-2.5 py-1 text-[11px] font-semibold ${statusTone(transaction.status)}`}>
                                 {transaction.status}
                               </span>
-                              {isSelected ? (
-                                <span className="inline-flex items-center gap-1 rounded-full border border-primary/20 bg-primary/10 px-2.5 py-1 text-[11px] font-semibold text-primary">
-                                  <CheckCircle2 className="h-3.5 w-3.5" />
-                                  Selected
+                              {needsAttention ? (
+                                <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-800">
+                                  Needs attention
                                 </span>
                               ) : null}
                             </div>
@@ -346,40 +385,55 @@ export default function InvoiceDetailPage() {
 
                           <div className="flex items-center gap-3 text-sm text-on-surface-variant">
                             <div className="text-right">
-                              <p className="text-xs uppercase tracking-[0.2em]">Amount</p>
-                              <p className="font-semibold text-on-surface">{formatCurrency(transaction.amount)}</p>
+                              <p className="font-label text-xs uppercase tracking-[0.2em]">Amount</p>
+                              <p className="font-semibold tabular-nums text-on-surface">{formatCurrency(transaction.amount)}</p>
                             </div>
-                            <CircleDot className="h-4 w-4 text-on-surface-variant" />
+                            <CircleDot className="h-4 w-4 shrink-0 text-on-surface-variant" aria-hidden />
                             <div className="text-right">
-                              <p className="text-xs uppercase tracking-[0.2em]">Method</p>
+                              <p className="font-label text-xs uppercase tracking-[0.2em]">Method</p>
                               <p className="font-semibold text-on-surface">{transaction.payment_method ?? "—"}</p>
                             </div>
                           </div>
                         </div>
 
-                        <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-on-surface-variant">
-                          <span>
-                            {transaction.checkout_url ? "Checkout link issued" : "No checkout link stored"} · used for manual verification and reconciliation.
+                        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-dashed border-border/70 pt-3 text-sm text-on-surface-variant">
+                          <span className="text-xs">
+                            {transaction.checkout_url ? "Checkout link issued" : "No checkout link stored"}
                           </span>
-                          {status !== "REVERSED" && !isSelected ? (
-                            <button
-                              type="button"
-                              onClick={() => void handleReverseTransaction(transaction.id)}
-                              disabled={isReversing || isMutating}
-                              className="inline-flex items-center gap-1.5 rounded-full border border-border bg-white px-3 py-1.5 text-[11px] font-semibold text-on-surface-variant transition-colors hover:bg-surface-container-low disabled:cursor-not-allowed disabled:opacity-60"
-                              title="Mark this extra attempt as reversed/refunded so it is no longer treated as active."
-                            >
-                              <RotateCcw className={`h-3.5 w-3.5 ${isReversing ? "animate-spin" : ""}`} />
-                              {isReversing ? "Reversing…" : "Mark refunded"}
-                            </button>
-                          ) : null}
+                          <div className="flex flex-wrap items-center gap-2">
+                            {showRecheck ? (
+                              <button
+                                type="button"
+                                onClick={() => void handleManualVerify(transaction.reference)}
+                                disabled={isVerifying}
+                                className="inline-flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-3 py-1.5 text-[11px] font-semibold text-amber-800 transition-colors hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                                title="Verify this specific checkout attempt against Paystack."
+                              >
+                                <RefreshCw className={`h-3.5 w-3.5 ${isVerifying ? "animate-spin" : ""}`} />
+                                {isVerifying ? "Rechecking…" : "Recheck payment"}
+                              </button>
+                            ) : null}
+                            {showReverse ? (
+                              <button
+                                type="button"
+                                onClick={() => void handleReverseTransaction(transaction.id)}
+                                disabled={isReversing || isVerifying}
+                                className="inline-flex items-center gap-1.5 rounded-full border border-border bg-white px-3 py-1.5 text-[11px] font-semibold text-on-surface-variant transition-colors hover:bg-surface-container-low disabled:cursor-not-allowed disabled:opacity-60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                                title="Mark this attempt as reversed/refunded so it is no longer treated as active."
+                              >
+                                <RotateCcw className={`h-3.5 w-3.5 ${isReversing ? "animate-spin" : ""}`} />
+                                {isReversing ? "Reversing…" : "Mark refunded"}
+                              </button>
+                            ) : null}
+                          </div>
                         </div>
-                      </button>
+                      </div>
                     );
                   })}
                 </div>
               ) : (
-                <div className="mt-4 rounded-2xl border border-dashed border-border/70 bg-white px-4 py-5 text-sm text-on-surface-variant">
+                <div className="mt-4 flex items-start gap-2 rounded-2xl border border-dashed border-border/70 bg-white px-4 py-5 text-sm text-on-surface-variant">
+                  <Circle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
                   No transaction attempts have been recorded for this invoice yet.
                 </div>
               )}
@@ -393,66 +447,113 @@ export default function InvoiceDetailPage() {
                     Add optional charges from the invoice template before the bill is settled.
                   </p>
                   <p className="mt-2 text-xs text-on-surface-variant">
-                    If the webhook did not settle this invoice yet, use the selected attempt above to verify the exact transaction.
+                    If a checkout attempt is stuck pending, recheck it directly from its card on the left.
                   </p>
                 </div>
 
                 <div className="rounded-2xl border border-border/70 bg-surface-container-low/60 p-4">
                   <div className="flex flex-col gap-3">
                     <label className="space-y-2">
-                      <span className="block text-xs font-semibold uppercase tracking-[0.2em] text-on-surface-variant">Optional fee</span>
+                      <span className="block font-label text-xs font-semibold uppercase tracking-[0.2em] text-on-surface-variant">Optional fee</span>
                       <select
                         value={selectedItemId}
                         onChange={(event) => setSelectedItemId(event.target.value)}
-                        className="w-full rounded-xl border border-border bg-white px-3 py-2.5 text-sm text-on-surface outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/20"
+                        disabled={availableOptionalItems.length === 0}
+                        className="w-full rounded-xl border border-border bg-white px-3 py-2.5 text-sm text-on-surface outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/20 disabled:cursor-not-allowed disabled:opacity-60"
                       >
-                        <option value="">Select optional fee</option>
+                        <option value="">
+                          {availableOptionalItems.length === 0 ? "No optional fees available" : "Select optional fee"}
+                        </option>
                         {availableOptionalItems.map((item) => (
                           <option key={item.id} value={item.id}>
-                            {item.name}
+                            {item.name} · {formatCurrency(item.amount)}
                           </option>
                         ))}
                       </select>
                     </label>
                     <div className="flex flex-wrap gap-3">
-                      <Button onClick={() => void handleAddItem()} disabled={isMutating || !selectedItemId}>
-                        <PlusCircle className="h-4 w-4" />
-                        Add fee
+                      <Button onClick={() => void handleAddItem()} disabled={isAddingItem || !selectedItemId}>
+                        {isAddingItem ? <Loader2 className="h-4 w-4 animate-spin" /> : <PlusCircle className="h-4 w-4" />}
+                        {isAddingItem ? "Adding…" : "Add fee"}
                       </Button>
-                      <Button variant="secondary" onClick={() => void handleVoid()} disabled={isMutating || invoice.status === "voided"}>
-                        <XCircle className="h-4 w-4" />
-                        Void invoice
-                      </Button>
+
+                      {invoice.status !== "voided" ? (
+                        confirmingVoid ? (
+                          <div className="flex items-center gap-2">
+                            <Button
+                              variant="secondary"
+                              onClick={() => void handleVoid()}
+                              disabled={isVoiding}
+                              className="border-error/30 bg-error/10 text-error hover:bg-error/20"
+                            >
+                              {isVoiding ? <Loader2 className="h-4 w-4 animate-spin" /> : <XCircle className="h-4 w-4" />}
+                              {isVoiding ? "Voiding…" : "Confirm void"}
+                            </Button>
+                            <button
+                              type="button"
+                              onClick={() => setConfirmingVoid(false)}
+                              disabled={isVoiding}
+                              className="text-sm font-medium text-on-surface-variant underline underline-offset-4 disabled:opacity-60"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        ) : (
+                          <Button variant="secondary" onClick={() => void handleVoid()} disabled={isMutating}>
+                            <XCircle className="h-4 w-4" />
+                            Void invoice
+                          </Button>
+                        )
+                      ) : null}
                     </div>
                   </div>
                 </div>
 
                 {actionError ? (
-                  <div className="rounded-xl border border-error/20 bg-error/10 px-4 py-3 text-sm text-error">
+                  <div className="flex items-start gap-2 rounded-xl border border-error/20 bg-error/10 px-4 py-3 text-sm text-error">
+                    <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
                     {actionError}
                   </div>
                 ) : null}
 
                 <div className="overflow-hidden rounded-2xl border border-border/70 bg-white">
-                  <div className="grid grid-cols-[1.6fr_0.8fr_0.3fr] bg-surface-container-low px-4 py-3 text-xs font-semibold uppercase tracking-[0.2em] text-on-surface-variant">
+                  <div className="hidden grid-cols-[1.6fr_0.8fr_0.3fr] bg-surface-container-low px-4 py-3 font-label text-xs font-semibold uppercase tracking-[0.2em] text-on-surface-variant sm:grid">
                     <span>Name</span>
                     <span>Amount</span>
                     <span>Action</span>
                   </div>
                   <div className="divide-y divide-border/70">
-                    {(invoice.items ?? []).map((item) => (
-                      <div key={item.id} className="grid grid-cols-[1.6fr_0.8fr_0.3fr] items-center px-4 py-4">
-                        <div>
-                          <p className="font-semibold text-on-surface">{item.name}</p>
-                          <p className="text-sm text-on-surface-variant">{item.id.slice(0, 8)}</p>
+                    {(invoice.items ?? []).map((item) => {
+                      const isRemoving = removingItemId === item.id;
+                      return (
+                        <div key={item.id} className="flex flex-col gap-2 px-4 py-4 sm:grid sm:grid-cols-[1.6fr_0.8fr_0.3fr] sm:items-center sm:gap-0">
+                          <div>
+                            <p className="font-semibold text-on-surface">{item.name}</p>
+                            <p className="font-label text-sm text-on-surface-variant">{item.id.slice(0, 8)}</p>
+                          </div>
+                          <div className="text-sm font-semibold tabular-nums text-on-surface">{formatCurrency(item.amount)}</div>
+                          <button
+                            onClick={() => void handleRemoveItem(item.id)}
+                            disabled={isRemoving}
+                            aria-label={`Remove ${item.name}`}
+                            title={`Remove ${item.name}`}
+                            className="flex w-fit items-center justify-center rounded-md p-1.5 text-error transition-colors hover:bg-error/10 disabled:cursor-not-allowed disabled:opacity-60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-error sm:justify-self-start"
+                          >
+                            {isRemoving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                          </button>
                         </div>
-                        <div className="text-sm font-semibold text-on-surface">{formatCurrency(item.amount)}</div>
-                        <button onClick={() => void handleRemoveItem(item.id)} className="flex items-center justify-center text-error">
-                          <Trash2 className="h-4 w-4" />
-                        </button>
-                      </div>
-                    ))}
+                      );
+                    })}
+                    {(invoice.items ?? []).length === 0 ? (
+                      <div className="px-4 py-6 text-center text-sm text-on-surface-variant">No line items on this invoice yet.</div>
+                    ) : null}
                   </div>
+                  {(invoice.items ?? []).length > 0 ? (
+                    <div className="flex items-center justify-between border-t border-dashed border-border/70 bg-surface-container-low/60 px-4 py-3">
+                      <span className="font-label text-xs uppercase tracking-[0.2em] text-on-surface-variant">Total</span>
+                      <span className="font-headline text-lg tabular-nums text-on-surface">{formatCurrency(runningTotal)}</span>
+                    </div>
+                  ) : null}
                 </div>
               </div>
             </DashboardPanel>

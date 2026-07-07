@@ -245,9 +245,8 @@ def get_dashboard_metrics(
     fee_templates_count = db.query(models.FeeTemplate).filter(models.FeeTemplate.org_id == org_id).count()
 
     invoices = db.query(models.Invoice).filter(models.Invoice.org_id == org_id).all()
-    successful_payments = db.query(models.PaymentLedger).filter(
+    payment_ledgers = db.query(models.PaymentLedger).filter(
         models.PaymentLedger.org_id == org_id,
-        models.PaymentLedger.status == models.PaymentLedgerStatus.SUCCESS.value,
         models.PaymentLedger.amount.isnot(None),
     ).all()
 
@@ -299,13 +298,23 @@ def get_dashboard_metrics(
                 if bucket:
                     bucket["billed"] = bucket["billed"] + invoice.total_amount
     
-    for payment in successful_payments:
-        amount = payment.amount or Decimal("0.00")
-        total_collected += amount
-        if payment.created_at:
-            bucket = bucket_map.get(payment.created_at.strftime("%Y-%m"))
-            if bucket:
-                bucket["collected"] = bucket["collected"] + amount
+    for payment in payment_ledgers:
+        amount = Decimal(str(payment.amount or "0.00"))
+        if payment.status == models.PaymentLedgerStatus.SUCCESS.value:
+            total_collected += amount
+            if payment.created_at:
+                bucket = bucket_map.get(payment.created_at.strftime("%Y-%m"))
+                if bucket:
+                    bucket["collected"] = bucket["collected"] + amount
+        elif payment.status == models.PaymentLedgerStatus.REVERSED.value:
+            total_collected -= amount
+            if payment.created_at:
+                bucket = bucket_map.get(payment.created_at.strftime("%Y-%m"))
+                if bucket:
+                    bucket["collected"] = bucket["collected"] - amount
+
+    if total_collected < 0:
+        total_collected = Decimal("0.00")
 
     total_outstanding = max(total_income - total_collected, Decimal("0.00"))
     collection_rate_pct = float((total_collected / total_income * Decimal("100")) if total_income > 0 else Decimal("0.00"))
