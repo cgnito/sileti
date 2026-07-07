@@ -95,6 +95,14 @@ yarn-error.log
 dist/
 build/
 
+# Deployment-only / non-app artifacts
+backend/tools/
+backend/tests/
+backend/test_students.csv
+ACCESS.md
+FLOW.md
+UPDATE.md
+
 # Credentials & Secrets
 *.pem
 *.key
