@@ -373,13 +373,17 @@ def verify_invoice_payment(
             detail="The provided transaction reference does not belong to this invoice.",
         )
 
-    verification = payments.verify_checkout_transaction(transaction.reference)
-    status_from_nomba = (verification.get("status") or "").upper()
-    if status_from_nomba != "SUCCESS":
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Nomba still reports this payment as {status_from_nomba or 'PENDING'}."
-        )
+    try:
+        verification = payments.verify_checkout_transaction(transaction.reference)
+    except HTTPException as exc:
+        error_detail = str(exc.detail).lower()
+        if exc.status_code == status.HTTP_404_NOT_FOUND or "404" in error_detail or "not found" in error_detail:
+            verification = {}
+            status_from_nomba = "FAILED"
+        else:
+            raise
+    else:
+        status_from_nomba = (verification.get("status") or "").upper()
 
     existing_success = db.query(models.PaymentLedger).filter(
         models.PaymentLedger.payment_flow == "checkout",
@@ -392,6 +396,50 @@ def verify_invoice_payment(
         return invoice
 
     received_amount = _resolve_verified_amount(verification, transaction.amount)
+
+    if status_from_nomba != "SUCCESS":
+        transaction.status = models.TransactionStatus.FAILED.value
+        db.add(
+            models.WebhookLog(
+                request_id=f"manual-verify-failed-{uuid4().hex}",
+                event_type="payment_failed",
+                payment_flow="checkout",
+                gateway_reference=transaction.reference,
+                transaction_id=verification.get("transactionId") or verification.get("id") or transaction.reference,
+                raw_payload={
+                    "source": "manual_admin_action",
+                    "invoice_id": str(invoice.id),
+                    "transaction_id": str(transaction.id),
+                    "transaction_reference": transaction.reference,
+                    "verification_status": status_from_nomba or "FAILED",
+                },
+            )
+        )
+        db.add(
+            models.PaymentLedger(
+                request_id=f"manual-verify-failed-ledger-{uuid4().hex}",
+                org_id=invoice.org_id,
+                invoice_id=invoice.id,
+                payment_flow="checkout",
+                event_type="payment_failed",
+                gateway_reference=transaction.reference,
+                transaction_id=verification.get("transactionId") or verification.get("id") or transaction.reference,
+                amount=Decimal("0.00"),
+                status=models.PaymentLedgerStatus.FAILED.value,
+                payment_method=transaction.payment_method,
+                customer_name=verification.get("narration") or verification.get("senderName") or verification.get("customerName"),
+                raw_payload={
+                    "source": "manual_admin_action",
+                    "invoice_id": str(invoice.id),
+                    "transaction_id": str(transaction.id),
+                    "transaction_reference": transaction.reference,
+                    "verification_status": status_from_nomba or "FAILED",
+                },
+            )
+        )
+        db.commit()
+        db.refresh(invoice)
+        return invoice
 
     transaction.status = models.TransactionStatus.SUCCESS.value
     transaction.payment_method = verification.get("paymentMethod") or verification.get("onlineCheckoutPaymentMethod") or transaction.payment_method
@@ -470,16 +518,21 @@ def reverse_invoice_transaction(
     if transaction.status == models.TransactionStatus.REVERSED.value:
         return invoice
 
-    recorded_amount = Decimal(str(transaction.amount or 0))
-    if transaction.status == models.TransactionStatus.SUCCESS.value:
-        try:
-            invoice.paid_amount -= recorded_amount
-        except Exception:
-            invoice.paid_amount -= Decimal(str(recorded_amount))
+    if transaction.status != models.TransactionStatus.SUCCESS.value:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Only successful payment attempts can be marked as refunded or reversed.",
+        )
 
-        if invoice.paid_amount < 0:
-            invoice.paid_amount = Decimal("0.00")
-        sync_invoice_status(invoice)
+    recorded_amount = Decimal(str(transaction.amount or 0))
+    try:
+        invoice.paid_amount -= recorded_amount
+    except Exception:
+        invoice.paid_amount -= Decimal(str(recorded_amount))
+
+    if invoice.paid_amount < 0:
+        invoice.paid_amount = Decimal("0.00")
+    sync_invoice_status(invoice)
 
     transaction.status = models.TransactionStatus.REVERSED.value
 

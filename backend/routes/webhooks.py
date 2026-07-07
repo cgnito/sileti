@@ -238,11 +238,24 @@ async def nomba_webhook_handler(
         if transaction_id:
             try:
                 verification = payments.verify_transaction_by_id(transaction_id)
+            except HTTPException as exc:
+                error_detail = str(exc.detail).lower()
+                if exc.status_code == 404 or "404" in error_detail or "not found" in error_detail:
+                    verification = {}
+                else:
+                    raise
             except Exception:
                 verification = {}
 
         if not verification and order_ref:
-            verification = payments.verify_checkout_transaction(order_ref)
+            try:
+                verification = payments.verify_checkout_transaction(order_ref)
+            except HTTPException as exc:
+                error_detail = str(exc.detail).lower()
+                if exc.status_code == 404 or "404" in error_detail or "not found" in error_detail:
+                    verification = {}
+                else:
+                    raise
 
         resolved_order_ref = _resolve_checkout_reference(verification, order_ref)
         gateway_reference = resolved_order_ref or transaction_id
@@ -273,6 +286,8 @@ async def nomba_webhook_handler(
             return {"status": "ignored", "message": "Transaction reference mismatch"}
 
         status_from_nomba = (verification.get("status") or "").upper()
+        if not status_from_nomba and payload.event_type == "payment_success":
+            status_from_nomba = "FAILED"
 
         if status_from_nomba and status_from_nomba != "SUCCESS":
             logger.warning("Checkout verification for %s returned non-success status %s.", resolved_order_ref, status_from_nomba)

@@ -182,23 +182,23 @@ def _record_notification(
     message_sid: str | None = None,
     error_message: str | None = None,
     payload: dict | None = None,
-) -> None:
-    db.add(
-        models.NotificationLog(
-            idempotency_key=idempotency_key,
-            org_id=org_id,
-            student_id=student_id,
-            invoice_id=invoice_id,
-            channel=channel,
-            event_type=event_type,
-            recipient_phone=recipient_phone,
-            recipient_email=recipient_email,
-            message_sid=message_sid,
-            status=status,
-            error_message=error_message,
-            payload=payload,
-        )
+) -> models.NotificationLog:
+    notification_log = models.NotificationLog(
+        idempotency_key=idempotency_key,
+        org_id=org_id,
+        student_id=student_id,
+        invoice_id=invoice_id,
+        channel=channel,
+        event_type=event_type,
+        recipient_phone=recipient_phone,
+        recipient_email=recipient_email,
+        message_sid=message_sid,
+        status=status,
+        error_message=error_message,
+        payload=payload,
     )
+    db.add(notification_log)
+    return notification_log
 
 
 def _notification_idempotency_key(event_type: str, invoice_id: UUID, recipient: str, channel: str = "email") -> str:
@@ -321,32 +321,6 @@ def _notify_invoice_event(db, invoice: models.Invoice, event_type: str) -> None:
 
     recipient_email = utils.sanitize_email(getattr(student, "parent_email", None))
     recipient_phone = utils.normalize_phone_number(getattr(student, "parent_phone", None))
-
-    if not recipient_email:
-        _record_notification(
-            db,
-            org_id=invoice.org_id,
-            student_id=student.id,
-            invoice_id=invoice.id,
-            idempotency_key=_notification_idempotency_key(event_type, invoice.id, str(invoice.id), "email"),
-            channel="email",
-            event_type=event_type,
-            recipient_phone=recipient_phone,
-            recipient_email=None,
-            status="skipped",
-            error_message="No parent email address is stored for this student.",
-            payload=_build_notification_log_payload(
-                invoice,
-                event_type,
-                body=_build_notification_body(invoice, event_type),
-                channel="email",
-                recipient_email=None,
-                recipient_phone=recipient_phone,
-            ),
-        )
-        db.commit()
-        return
-
     body = _build_invoice_message(invoice) if event_type == "invoice_generated" else _build_payment_message(invoice)
     payload = _build_notification_payload(invoice, event_type)
     log_payload = _build_notification_log_payload(
@@ -357,8 +331,54 @@ def _notify_invoice_event(db, invoice: models.Invoice, event_type: str) -> None:
         recipient_email=recipient_email,
         recipient_phone=recipient_phone,
     )
+    idempotency_key = _notification_idempotency_key(event_type, invoice.id, recipient_email or str(invoice.id), "email")
 
-    idempotency_key = _notification_idempotency_key(event_type, invoice.id, recipient_email, "email")
+    existing_log = db.query(models.NotificationLog).filter(
+        models.NotificationLog.idempotency_key == idempotency_key,
+    ).first()
+    if existing_log:
+        logger.info(
+            "Skipping duplicate notification queue entry for invoice %s (%s).",
+            invoice.id,
+            event_type,
+        )
+        return
+
+    if not recipient_email:
+        _record_notification(
+            db,
+            org_id=invoice.org_id,
+            student_id=student.id,
+            invoice_id=invoice.id,
+            idempotency_key=idempotency_key,
+            channel="email",
+            event_type=event_type,
+            recipient_phone=recipient_phone,
+            recipient_email=None,
+            message_sid=None,
+            status="skipped",
+            error_message="No parent email address is stored for this student.",
+            payload=log_payload,
+        )
+        db.commit()
+        return
+
+    notification_log = _record_notification(
+        db,
+        org_id=invoice.org_id,
+        student_id=student.id,
+        invoice_id=invoice.id,
+        idempotency_key=idempotency_key,
+        channel="email",
+        event_type=event_type,
+        recipient_phone=recipient_phone,
+        recipient_email=recipient_email,
+        status="queued",
+        error_message=None,
+        payload=log_payload,
+    )
+    db.commit()
+
     message_sid, error_message = _send_invoice_notification(
         db,
         invoice,
@@ -368,27 +388,10 @@ def _notify_invoice_event(db, invoice: models.Invoice, event_type: str) -> None:
         payload=payload,
     )
 
-    with db.begin_nested():
-        try:
-            _record_notification(
-                db,
-                org_id=invoice.org_id,
-                student_id=student.id,
-                invoice_id=invoice.id,
-                idempotency_key=idempotency_key,
-                channel="email",
-                event_type=event_type,
-                recipient_phone=recipient_phone,
-                recipient_email=recipient_email,
-                status="sent" if message_sid else "failed",
-                message_sid=message_sid,
-                error_message=error_message,
-                payload=log_payload,
-            )
-            db.flush()
-        except IntegrityError:
-            pass
-
+    notification_log.message_sid = message_sid
+    notification_log.status = "sent" if message_sid else "failed"
+    notification_log.error_message = error_message
+    notification_log.payload = log_payload
     db.commit()
 
 
