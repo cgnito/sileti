@@ -151,6 +151,7 @@ def generate_invoices(
         )
         invoice.items = details_to_add
         db.add(invoice)
+        db.flush()
         invoices_created += 1
         created_invoice_ids.append(invoice.id)
 

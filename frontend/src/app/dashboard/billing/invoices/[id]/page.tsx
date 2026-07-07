@@ -7,8 +7,6 @@ import {
   AlertCircle,
   Check,
   CheckCircle2,
-  Circle,
-  CircleDot,
   Copy,
   Loader2,
   PlusCircle,
@@ -39,6 +37,19 @@ function formatShortDateTime(value?: string | null) {
     dateStyle: "medium",
     timeStyle: "short",
   }).format(new Date(value));
+}
+
+// Converts raw backend enum-style strings (e.g. "un_paid", "bank_transfer")
+// into display-ready text ("Un Paid", "Bank Transfer"). CSS `capitalize`
+// alone won't do this — it capitalizes per-word but leaves underscores intact.
+function humanize(value?: string | null): string {
+  if (!value) return "—";
+  return value
+    .toLowerCase()
+    .split(/[_\s]+/)
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
 }
 
 function statusTone(status?: string | null) {
@@ -282,7 +293,7 @@ export default function InvoiceDetailPage() {
         </DashboardPanel>
       ) : invoice ? (
         <>
-          <DashboardPanel className="relative overflow-hidden">
+          <DashboardPanel className="relative overflow-hidden border-2">
             {invoice.status === "voided" ? (
               <span
                 aria-hidden
@@ -316,8 +327,8 @@ export default function InvoiceDetailPage() {
             <div className="mt-6 grid gap-4 sm:grid-cols-3">
               <div className="rounded-xl border border-border/70 bg-surface-container-low p-4">
                 <p className="font-label text-xs uppercase tracking-[0.2em] text-on-surface-variant">Status</p>
-                <span className={`mt-2 inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold capitalize ${statusTone(invoice.status)}`}>
-                  {invoice.status}
+                <span className={`mt-2 inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${statusTone(invoice.status)}`}>
+                  {humanize(invoice.status)}
                 </span>
               </div>
               <div className="rounded-xl border border-border/70 bg-surface-container-low p-4">
@@ -334,12 +345,7 @@ export default function InvoiceDetailPage() {
           <div className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
             <DashboardPanel>
               <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                <div>
-                  <h3 className="font-headline text-xl text-on-surface">Checkout attempts</h3>
-                  <p className="mt-1 text-sm text-on-surface-variant">
-                    Each attempt carries its own actions — verify or reverse right where you're looking.
-                  </p>
-                </div>
+                <h3 className="font-headline text-xl text-on-surface">Checkout attempts</h3>
                 {invoice.transactions?.length ? (
                   <div className="font-label rounded-full border border-border bg-surface-container-low px-3 py-1 text-xs font-semibold text-on-surface-variant">
                     {invoice.transactions.length} attempt{invoice.transactions.length === 1 ? "" : "s"} recorded
@@ -370,7 +376,7 @@ export default function InvoiceDetailPage() {
                               <p className="truncate font-semibold text-on-surface">{transaction.reference}</p>
                               <CopyButton value={transaction.reference} label="reference" />
                               <span className={`inline-flex shrink-0 rounded-full border px-2.5 py-1 text-[11px] font-semibold ${statusTone(transaction.status)}`}>
-                                {transaction.status}
+                                {humanize(transaction.status)}
                               </span>
                               {needsAttention ? (
                                 <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-800">
@@ -383,15 +389,14 @@ export default function InvoiceDetailPage() {
                             </p>
                           </div>
 
-                          <div className="flex items-center gap-3 text-sm text-on-surface-variant">
+                          <div className="flex items-center gap-4 text-sm text-on-surface-variant">
                             <div className="text-right">
                               <p className="font-label text-xs uppercase tracking-[0.2em]">Amount</p>
                               <p className="font-semibold tabular-nums text-on-surface">{formatCurrency(transaction.amount)}</p>
                             </div>
-                            <CircleDot className="h-4 w-4 shrink-0 text-on-surface-variant" aria-hidden />
                             <div className="text-right">
                               <p className="font-label text-xs uppercase tracking-[0.2em]">Method</p>
-                              <p className="font-semibold text-on-surface">{transaction.payment_method ?? "—"}</p>
+                              <p className="font-semibold text-on-surface">{humanize(transaction.payment_method)}</p>
                             </div>
                           </div>
                         </div>
@@ -432,8 +437,7 @@ export default function InvoiceDetailPage() {
                   })}
                 </div>
               ) : (
-                <div className="mt-4 flex items-start gap-2 rounded-2xl border border-dashed border-border/70 bg-white px-4 py-5 text-sm text-on-surface-variant">
-                  <Circle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+                <div className="mt-4 rounded-2xl border border-dashed border-border/70 bg-white px-4 py-5 text-sm text-on-surface-variant">
                   No transaction attempts have been recorded for this invoice yet.
                 </div>
               )}
@@ -441,15 +445,7 @@ export default function InvoiceDetailPage() {
 
             <DashboardPanel>
               <div className="flex flex-col gap-4">
-                <div>
-                  <h3 className="font-headline text-xl text-on-surface">Line items</h3>
-                  <p className="mt-1 text-sm text-on-surface-variant">
-                    Add optional charges from the invoice template before the bill is settled.
-                  </p>
-                  <p className="mt-2 text-xs text-on-surface-variant">
-                    If a checkout attempt is stuck pending, recheck it directly from its card on the left.
-                  </p>
-                </div>
+                <h3 className="font-headline text-xl text-on-surface">Line items</h3>
 
                 <div className="rounded-2xl border border-border/70 bg-surface-container-low/60 p-4">
                   <div className="flex flex-col gap-3">
