@@ -19,18 +19,18 @@ logger = logging.getLogger(__name__)
 
 DEBUG_MODE = os.getenv("DEBUG_MODE", "").strip().lower() in {"1", "true", "yes", "on"}
 GEMINI_TIMEOUT_SECONDS = float(os.getenv("GEMINI_TIMEOUT_SECONDS", "20"))
-GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
 try:
     GOOGLE_GENAI_VERSION = package_version("google-genai")
 except PackageNotFoundError:
     GOOGLE_GENAI_VERSION = "unknown"
 
-if not GOOGLE_API_KEY:
-    logger.warning("GOOGLE_API_KEY is missing. Gemini requests will fail until it is configured.")
+if not GEMINI_API_KEY:
+    logger.warning("GEMINI_API_KEY is missing. Gemini requests will fail until it is configured.")
 
 try:
-    ai_client = genai.Client(api_key=GOOGLE_API_KEY) if GOOGLE_API_KEY else None
+    ai_client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
 except Exception as exc:
     ai_client = None
     logger.exception(
@@ -180,7 +180,7 @@ async def whatsapp_assistant_webhook(
     _debug("debug mode enabled: %s", DEBUG_MODE)
 
     if not ai_client:
-        logger.warning("Gemini client unavailable because GOOGLE_API_KEY is missing or client initialization failed.")
+        logger.warning("Gemini client unavailable because GEMINI_API_KEY is missing or client initialization failed.")
         safe_reply = "i am experiencing a slight network glitch. please try messaging me again shortly!"
         twiml_payload = f'<?xml version="1.0" encoding="UTF-8"?><Response><Message>{html.escape(safe_reply, quote=False)}</Message></Response>'
         logger.info("TwiML response: %s", twiml_payload)
@@ -276,6 +276,8 @@ async def whatsapp_assistant_webhook(
     def generate_payment_link(student_id: str, amount_to_pay: float) -> dict:
         logger.info("generate_payment_link called | student_id=%s amount_to_pay=%s", student_id, amount_to_pay)
         try:
+            import routes.payments as payments
+
             normalized_id = (student_id or "").replace("-", "/").strip()
             _debug("generate_payment_link normalized_id=%s", normalized_id)
 
