@@ -1,6 +1,11 @@
-import os
+import asyncio
+import html
 import logging
-import uuid 
+import os
+import time
+import traceback
+import uuid
+from importlib.metadata import PackageNotFoundError, version as package_version
 from fastapi import APIRouter, Depends, Form, Response
 from sqlalchemy.orm import Session
 from google import genai
@@ -8,15 +13,116 @@ from google.genai import types
 
 from app import models
 from app.database import get_db
-import routes.payments as payments 
 
 router = APIRouter(prefix="/whatsapp", tags=["WhatsApp Assistant"])
 logger = logging.getLogger(__name__)
 
-ai_client = genai.Client()
+DEBUG_MODE = os.getenv("DEBUG_MODE", "").strip().lower() in {"1", "true", "yes", "on"}
+GEMINI_TIMEOUT_SECONDS = float(os.getenv("GEMINI_TIMEOUT_SECONDS", "20"))
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
+
+try:
+    GOOGLE_GENAI_VERSION = package_version("google-genai")
+except PackageNotFoundError:
+    GOOGLE_GENAI_VERSION = "unknown"
+
+if not GOOGLE_API_KEY:
+    logger.warning("GOOGLE_API_KEY is missing. Gemini requests will fail until it is configured.")
+
+try:
+    ai_client = genai.Client(api_key=GOOGLE_API_KEY) if GOOGLE_API_KEY else None
+except Exception as exc:
+    ai_client = None
+    logger.exception(
+        "Failed to initialize Gemini client | type=%s repr=%r",
+        type(exc).__name__,
+        exc,
+    )
+
+logger.info("Loaded google-genai version: %s", GOOGLE_GENAI_VERSION)
 
 # in-memory cache to persist conversational history across separate webhook requests
 conversation_sessions = {}
+
+
+def _debug(message: str, *args) -> None:
+    if DEBUG_MODE:
+        logger.debug(message, *args)
+
+
+def _log_exception(context: str, exc: Exception) -> None:
+    logger.exception(
+        "%s | type=%s repr=%r",
+        context,
+        type(exc).__name__,
+        exc,
+    )
+
+
+def _classify_gemini_error(exc: Exception) -> str:
+    error_text = f"{type(exc).__name__} {repr(exc)} {exc}".lower()
+    status_code = getattr(exc, "status_code", None)
+    response = getattr(exc, "response", None)
+    if status_code is None and response is not None:
+        status_code = getattr(response, "status_code", None)
+
+    if status_code == 429 or "resource_exhausted" in error_text or "quota exceeded" in error_text:
+        return "quota_exhausted"
+
+    if status_code in {401, 403} or "invalid api key" in error_text or "api key" in error_text or "permission_denied" in error_text:
+        return "invalid_api_key"
+
+    return "unknown"
+
+
+async def _call_gemini(label: str, call_fn):
+    start = time.perf_counter()
+    logger.info("%s: starting Gemini call", label)
+    _debug("%s: Gemini request payload prepared", label)
+    try:
+        response = await asyncio.wait_for(asyncio.to_thread(call_fn), timeout=GEMINI_TIMEOUT_SECONDS)
+        elapsed = time.perf_counter() - start
+        logger.info("%s: Gemini call completed in %.3fs", label, elapsed)
+        _debug("%s: raw Gemini response repr=%r", label, response)
+        return response
+    except asyncio.TimeoutError as exc:
+        elapsed = time.perf_counter() - start
+        logger.exception(
+            "%s: Gemini timeout after %.3fs | type=%s repr=%r",
+            label,
+            elapsed,
+            type(exc).__name__,
+            exc,
+        )
+        raise
+    except Exception as exc:
+        elapsed = time.perf_counter() - start
+        error_type = _classify_gemini_error(exc)
+        if error_type == "quota_exhausted":
+            logger.exception(
+                "%s: Gemini quota exhausted detected after %.3fs | type=%s repr=%r",
+                label,
+                elapsed,
+                type(exc).__name__,
+                exc,
+            )
+        elif error_type == "invalid_api_key":
+            logger.exception(
+                "%s: Gemini invalid API key detected after %.3fs | type=%s repr=%r",
+                label,
+                elapsed,
+                type(exc).__name__,
+                exc,
+            )
+        else:
+            logger.exception(
+                "%s: Gemini call failed after %.3fs | type=%s repr=%r",
+                label,
+                elapsed,
+                type(exc).__name__,
+                exc,
+            )
+        raise
 
 # --- SYSTEM PROMPT TEMPLATE ---
 SYSTEM_INSTRUCTION = """
@@ -66,105 +172,166 @@ async def whatsapp_assistant_webhook(
     Body: str = Form(...),      
     db: Session = Depends(get_db)
 ):
+    logger.info("whatsapp webhook entered")
     user_message = Body.strip()
     parent_phone = From.replace("whatsapp:", "").strip()
-    logger.info(f"incoming webhook raw phone number string: {parent_phone}")
+    logger.info("incoming phone number: %s", parent_phone)
+    logger.info("incoming message: %s", user_message)
+    _debug("debug mode enabled: %s", DEBUG_MODE)
+
+    if not ai_client:
+        logger.warning("Gemini client unavailable because GOOGLE_API_KEY is missing or client initialization failed.")
+        safe_reply = "i am experiencing a slight network glitch. please try messaging me again shortly!"
+        twiml_payload = f'<?xml version="1.0" encoding="UTF-8"?><Response><Message>{html.escape(safe_reply, quote=False)}</Message></Response>'
+        logger.info("TwiML response: %s", twiml_payload)
+        return Response(content=twiml_payload, media_type="application/xml")
 
 
     # tool 1: verify_student_by_id
     def verify_student_by_id(student_id: str) -> dict:
-        normalized_id = student_id.replace("-", "/").strip()
-        student = db.query(models.Student).filter(models.Student.silete_id == normalized_id).first()
-        if not student:
-            return {"error": f"No student found with ID {student_id}"}
-        school = db.query(models.Organization).filter(models.Organization.id == student.org_id).first()
-        school_name = school.school_name if school else "Unknown School"
-        return {
-            "student_name": f"{student.first_name} {student.last_name}",
-            "silete_id": student.silete_id,
-            "school_name": school_name,
-            "student_uuid": str(student.id)
-        }
+        logger.info("verify_student_by_id called | student_id=%s", student_id)
+        try:
+            normalized_id = (student_id or "").replace("-", "/").strip()
+            _debug("verify_student_by_id normalized_id=%s", normalized_id)
+
+            query_start = time.perf_counter()
+            student = db.query(models.Student).filter(models.Student.silete_id == normalized_id).first()
+            logger.info("verify_student_by_id student lookup took %.3fs", time.perf_counter() - query_start)
+
+            if not student:
+                logger.info("verify_student_by_id found no student for normalized_id=%s", normalized_id)
+                return {"error": f"No student found with ID {student_id}"}
+
+            query_start = time.perf_counter()
+            school = db.query(models.Organization).filter(models.Organization.id == student.org_id).first()
+            logger.info("verify_student_by_id school lookup took %.3fs", time.perf_counter() - query_start)
+
+            school_name = school.school_name if school else "Unknown School"
+            result = {
+                "student_name": f"{student.first_name} {student.last_name}",
+                "silete_id": student.silete_id,
+                "school_name": school_name,
+                "student_uuid": str(student.id)
+            }
+            logger.info("verify_student_by_id return value: %s", result)
+            return result
+        except Exception as exc:
+            db.rollback()
+            _log_exception("verify_student_by_id failed", exc)
+            return {"error": f"verify_student_by_id failed: {type(exc).__name__}: {repr(exc)}"}
 
 
     # tool 2: link_parent_to_student
     def link_parent_to_student(student_id: str) -> dict:
-        normalized_id = student_id.replace("-", "/").strip()
-        student = db.query(models.Student).filter(models.Student.silete_id == normalized_id).first()
-        if not student:
-            return {"error": f"Student matching {student_id} not found during link phase"}
-        
-        # Securely use parent_phone from the outer FastAPI request scope directly!
-        parent = db.query(models.Parent).filter(models.Parent.primary_phone == parent_phone).first()
-        if not parent:
-            parent = models.Parent(org_id=student.org_id, primary_phone=parent_phone, is_verified=True)
-            db.add(parent)
-            db.flush() 
-        if student not in parent.students:
-            parent.students.append(student)
-            
-        unpaid_invoice = db.query(models.Invoice).filter(
-            models.Invoice.student_id == student.id, models.Invoice.status != models.InvoiceStatus.PAID
-        ).first()
-        total_due = float(unpaid_invoice.total_amount - unpaid_invoice.paid_amount) if unpaid_invoice else 0.00
-        term_info = f"{unpaid_invoice.term} ({unpaid_invoice.session})" if unpaid_invoice else "current term"
-        db.commit()
-        return {"success": True, "student_name": f"{student.first_name} {student.last_name}", "total_due": total_due, "term_info": term_info}
+        logger.info("link_parent_to_student called | student_id=%s", student_id)
+        try:
+            normalized_id = (student_id or "").replace("-", "/").strip()
+            _debug("link_parent_to_student normalized_id=%s", normalized_id)
+
+            query_start = time.perf_counter()
+            student = db.query(models.Student).filter(models.Student.silete_id == normalized_id).first()
+            logger.info("link_parent_to_student student lookup took %.3fs", time.perf_counter() - query_start)
+            if not student:
+                return {"error": f"Student matching {student_id} not found during link phase"}
+
+            query_start = time.perf_counter()
+            parent = db.query(models.Parent).filter(models.Parent.primary_phone == parent_phone).first()
+            logger.info("link_parent_to_student parent lookup took %.3fs", time.perf_counter() - query_start)
+            if not parent:
+                parent = models.Parent(org_id=student.org_id, primary_phone=parent_phone, is_verified=True)
+                db.add(parent)
+                flush_start = time.perf_counter()
+                db.flush()
+                logger.info("link_parent_to_student parent flush took %.3fs", time.perf_counter() - flush_start)
+            if student not in parent.students:
+                parent.students.append(student)
+
+            query_start = time.perf_counter()
+            unpaid_invoice = db.query(models.Invoice).filter(
+                models.Invoice.student_id == student.id, models.Invoice.status != models.InvoiceStatus.PAID
+            ).first()
+            logger.info("link_parent_to_student invoice lookup took %.3fs", time.perf_counter() - query_start)
+
+            total_due = (
+                float(getattr(unpaid_invoice, "total_amount", 0) or 0)
+                - float(getattr(unpaid_invoice, "paid_amount", 0) or 0)
+            ) if unpaid_invoice else 0.00
+            term_info = f"{unpaid_invoice.term} ({unpaid_invoice.session})" if unpaid_invoice else "current term"
+
+            commit_start = time.perf_counter()
+            db.commit()
+            logger.info("link_parent_to_student commit took %.3fs", time.perf_counter() - commit_start)
+
+            result = {"success": True, "student_name": f"{student.first_name} {student.last_name}", "total_due": total_due, "term_info": term_info}
+            logger.info("link_parent_to_student return value: %s", result)
+            return result
+        except Exception as exc:
+            db.rollback()
+            _log_exception("link_parent_to_student failed", exc)
+            return {"error": f"link_parent_to_student failed: {type(exc).__name__}: {repr(exc)}"}
 
 
 
     # tool 3: generate_payment_link and initialize a Transaction record in the database
     def generate_payment_link(student_id: str, amount_to_pay: float) -> dict:
-        normalized_id = student_id.replace("-", "/").strip()
-        
-        # fetch the Student
-        student = db.query(models.Student).filter(models.Student.silete_id == normalized_id).first()
-        if not student:
-            return {"error": "Student record missing during payment initialization."}
-            
-        # find the Student's Outstanding Invoice (Unpaid or Partially Paid)
-        invoice = db.query(models.Invoice).filter(
-            models.Invoice.student_id == student.id,
-            models.Invoice.status != models.InvoiceStatus.PAID
-        ).first()
-        
-        if not invoice:
-            return {"error": "No outstanding invoice found for this student."}
-
-        subaccount_id = payments._get_hackathon_subaccount_id()
-        order_ref = f"SIL-{uuid.uuid4().hex[:12].upper()}"
-        amount_kobo = int(amount_to_pay * 100)
-        customer_email = f"{student.silete_id.replace('/', '_')}@sileti.internal"
-
+        logger.info("generate_payment_link called | student_id=%s amount_to_pay=%s", student_id, amount_to_pay)
         try:
-            # request the checkout URL from Nomba
+            normalized_id = (student_id or "").replace("-", "/").strip()
+            _debug("generate_payment_link normalized_id=%s", normalized_id)
+
+            query_start = time.perf_counter()
+            student = db.query(models.Student).filter(models.Student.silete_id == normalized_id).first()
+            logger.info("generate_payment_link student lookup took %.3fs", time.perf_counter() - query_start)
+            if not student:
+                return {"error": "Student record missing during payment initialization."}
+
+            query_start = time.perf_counter()
+            invoice = db.query(models.Invoice).filter(
+                models.Invoice.student_id == student.id,
+                models.Invoice.status != models.InvoiceStatus.PAID
+            ).first()
+            logger.info("generate_payment_link invoice lookup took %.3fs", time.perf_counter() - query_start)
+
+            if not invoice:
+                return {"error": "No outstanding invoice found for this student."}
+
+            subaccount_id = payments._get_hackathon_subaccount_id()
+            order_ref = f"SIL-{uuid.uuid4().hex[:12].upper()}"
+            amount_kobo = int(amount_to_pay * 100)
+            customer_email = f"{student.silete_id.replace('/', '_')}@sileti.internal"
+
+            logger.info("generate_payment_link Nomba checkout start | order_ref=%s amount_kobo=%s", order_ref, amount_kobo)
+            nomba_start = time.perf_counter()
             checkout_url = payments.create_checkout_order(
-                amount_kobo=amount_kobo, 
-                order_ref=order_ref, 
-                school_subaccount_id=subaccount_id, 
+                amount_kobo=amount_kobo,
+                order_ref=order_ref,
+                school_subaccount_id=subaccount_id,
                 customer_email=customer_email
             )
-            
-            # INITIALIZE THE TRANSACTION RECORD IN THE DATABASE
+            logger.info("generate_payment_link Nomba latency %.3fs", time.perf_counter() - nomba_start)
+
             new_transaction = models.Transaction(
                 org_id=student.org_id,
                 invoice_id=invoice.id,
-                amount=amount_to_pay, # Store as absolute numeric balance float/decimal
-                reference=order_ref, # Used to find this row when the webhook alerts Nomba of a successful payment
+                amount=amount_to_pay,
+                reference=order_ref,
                 status=models.TransactionStatus.PENDING.value,
                 checkout_url=checkout_url,
                 customer_phone=parent_phone
             )
-            
+
             db.add(new_transaction)
-            db.commit() # Save to DB instantly before displaying to the parent
-            
-            return {"success": True, "checkout_url": checkout_url, "amount": amount_to_pay}
-            
-        except Exception as e:
-            db.rollback() # Roll back DB operations if the Nomba network gateway dropped
-            logger.error(f"Nomba order generation caught an exception: {str(e)}")
-            return {"error": f"Could not generate secure session link: {str(e)}"}
+            commit_start = time.perf_counter()
+            db.commit()
+            logger.info("generate_payment_link commit took %.3fs", time.perf_counter() - commit_start)
+
+            result = {"success": True, "checkout_url": checkout_url, "amount": amount_to_pay}
+            logger.info("generate_payment_link return value: %s", result)
+            return result
+        except Exception as exc:
+            db.rollback()
+            _log_exception("generate_payment_link failed", exc)
+            return {"error": f"Could not generate secure session link: {type(exc).__name__}: {repr(exc)}"}
 
 
 
@@ -172,44 +339,72 @@ async def whatsapp_assistant_webhook(
     try:
         # retrieve session history or create a new one if it does not exist
         if parent_phone not in conversation_sessions:
+            logger.warning(
+                "Creating new in-memory conversation session for %s. This cache is process-local and unreliable on Vercel cold starts or scale-out.",
+                parent_phone,
+            )
             conversation_sessions[parent_phone] = []
-            
+
         chat_history = conversation_sessions[parent_phone]
+        client = ai_client
+        if client is None:
+            logger.warning("Gemini client is unavailable after initialization check.")
+            raise RuntimeError("Gemini client unavailable")
+        logger.info("session retrieved | parent_phone=%s history_length=%s", parent_phone, len(chat_history))
+        _debug("chat history before append: %s", chat_history)
         
         # append the incoming message from the user to the session timeline
         chat_history.append(
             types.Content(role="user", parts=[types.Part.from_text(text=user_message)])
         )
+        logger.info("user message appended to session history")
+        _debug("chat history after append: %s", chat_history)
         
-        ai_response = ai_client.models.generate_content(
-            model='gemini-2.5-flash',
-            contents=chat_history,
-            config=types.GenerateContentConfig(
-                system_instruction=SYSTEM_INSTRUCTION,
-                temperature=0.2, 
-                tools=[verify_student_by_id, link_parent_to_student, generate_payment_link]
+        ai_response = await _call_gemini(
+            "first Gemini call",
+            lambda: client.models.generate_content(
+                model='gemini-2.5-flash',
+                contents=chat_history,
+                config=types.GenerateContentConfig(
+                    system_instruction=SYSTEM_INSTRUCTION,
+                    temperature=0.2,
+                    tools=[verify_student_by_id, link_parent_to_student, generate_payment_link]
+                )
             )
         )
+        logger.info("after first Gemini call")
+        logger.info("raw Gemini response: %r", ai_response)
+        logger.info("Gemini text response: %r", ai_response.text)
+        logger.info("Gemini function_calls exist: %s", bool(ai_response.function_calls))
         
         # process execution loop if the model requires data parameters from internal tools
         if ai_response.function_calls:
+            logger.info("Gemini returned %s function call(s)", len(ai_response.function_calls))
             # append model tool call intent to the context timeline history
-            chat_history.append(ai_response.candidates[0].content)
+            if ai_response.candidates and ai_response.candidates[0].content:
+                chat_history.append(ai_response.candidates[0].content)
+                logger.info("Gemini tool-call content appended to history")
             
             tool_responses = []
             for call in ai_response.function_calls:
+                logger.info("Gemini function call name: %s", call.name)
+                logger.info("Gemini function call args: %s", call.args)
                 if call.name == "verify_student_by_id":
-                    student_id_arg = call.args.get("student_id")
-                    tool_result = verify_student_by_id(student_id=student_id_arg)
+                    student_id_arg = call.args.get("student_id") if call.args else None
+                    tool_result = verify_student_by_id(student_id=student_id_arg or "")
                     
                 elif call.name == "link_parent_to_student":
-                    student_id_arg = call.args.get("student_id")
-                    tool_result = link_parent_to_student(student_id=student_id_arg)
+                    student_id_arg = call.args.get("student_id") if call.args else None
+                    tool_result = link_parent_to_student(student_id=student_id_arg or "")
                     
                 elif call.name == "generate_payment_link":
-                    student_id_arg = call.args.get("student_id")
-                    amount_arg = float(call.args.get("amount_to_pay"))
-                    tool_result = generate_payment_link(student_id=student_id_arg, amount_to_pay=amount_arg)
+                    student_id_arg = call.args.get("student_id") if call.args else None
+                    amount_arg = float(call.args.get("amount_to_pay")) if call.args and call.args.get("amount_to_pay") is not None else 0.0
+                    tool_result = generate_payment_link(student_id=student_id_arg or "", amount_to_pay=amount_arg)
+                else:
+                    tool_result = {"error": f"Unknown tool call: {call.name}"}
+                    logger.warning("Unknown Gemini function call requested: %s", call.name)
+                logger.info("Tool return value for %s: %s", call.name, tool_result)
                 
                 # package tool payload structures back into gemini format
                 tool_responses.append(
@@ -221,34 +416,50 @@ async def whatsapp_assistant_webhook(
             
             # append tool payload results directly to chat context history
             chat_history.append(types.Content(role="tool", parts=tool_responses))
+            logger.info("tool responses appended to chat history")
             
             # make follow up turn call allowing gemini to process tool metrics and context instructions
-            final_response = ai_client.models.generate_content(
-                model='gemini-2.5-flash',
-                contents=chat_history,
-                config=types.GenerateContentConfig(
-                    system_instruction=SYSTEM_INSTRUCTION,
-                    temperature=0.2,
+            logger.info("before second Gemini call")
+            final_response = await _call_gemini(
+                "second Gemini call",
+                lambda: client.models.generate_content(
+                    model='gemini-2.5-flash',
+                    contents=chat_history,
+                    config=types.GenerateContentConfig(
+                        system_instruction=SYSTEM_INSTRUCTION,
+                        temperature=0.2,
+                    )
                 )
             )
-            reply_content = final_response.text
+            logger.info("after second Gemini call")
+            logger.info("raw second Gemini response: %r", final_response)
+            logger.info("second Gemini text response: %r", final_response.text)
+            reply_content = final_response.text or "i am experiencing a slight network glitch. please try messaging me again shortly!"
             
             # append final response text to history to maintain multi turn context continuity
             if final_response.candidates and final_response.candidates[0].content:
                 chat_history.append(final_response.candidates[0].content)
+                logger.info("final Gemini content appended to history")
         else:
             # handle default text output conditions directly if no tools are invoked
-            reply_content = ai_response.text
+            reply_content = ai_response.text or "i am experiencing a slight network glitch. please try messaging me again shortly!"
             if ai_response.candidates and ai_response.candidates[0].content:
                 chat_history.append(ai_response.candidates[0].content)
+                logger.info("non-tool Gemini content appended to history")
 
     except Exception as error:
-        logger.error(f"Webhook processing error context: {str(error)}")
+        _log_exception("Webhook processing error", error)
         reply_content = "i am experiencing a slight network glitch. please try messaging me again shortly!"
 
+    if reply_content is None:
+        reply_content = "i am experiencing a slight network glitch. please try messaging me again shortly!"
+
+    escaped_reply = html.escape(reply_content, quote=False)
     twiml_payload = f"""<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-    <Message>{reply_content}</Message>
+    <Message>{escaped_reply}</Message>
 </Response>"""
+
+    logger.info("TwiML response: %s", twiml_payload)
 
     return Response(content=twiml_payload, media_type="application/xml")
