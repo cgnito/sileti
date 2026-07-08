@@ -365,7 +365,7 @@ async def whatsapp_assistant_webhook(
         ai_response = await _call_gemini(
             "first Gemini call",
             lambda: client.models.generate_content(
-                model='gemini-2.5-flash',
+                model='gemini-2.0-flash',
                 contents=chat_history,
                 config=types.GenerateContentConfig(
                     system_instruction=SYSTEM_INSTRUCTION,
