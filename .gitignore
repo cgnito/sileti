@@ -1,52 +1,118 @@
-# Virtual Environment
+# ── Environment Variables ────────────────────────────────────────────────────
+# Ignore real env files; keep *.example files so they can be committed as docs.
+.env
+.env.local
+.env.*.local
+backend/.env
+frontend/.env.local
+
+# ── Python ───────────────────────────────────────────────────────────────────
+# Virtual environments
 .venv/
 venv/
 env/
 ENV/
-backend/venv/
-frontend/venv/
 
-# Environment variables
-.env
-.env.local
-.env.*.local
-
-# Python
+# Bytecode & compiled extensions
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
-.Python
-build/
-develop-eggs/
+*.pyd
+
+# Distribution / packaging
 dist/
-downloads/
-eggs/
+build/
+*.egg-info/
+*.egg
+MANIFEST
 .eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
 wheels/
 pip-wheel-metadata/
 share/python-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-MANIFEST
+develop-eggs/
+sdist/
+var/
 
-# Testing & Coverage
+# Installers
+.installed.cfg
+
+# Type checker & linter caches
+.mypy_cache/
+.ruff_cache/
+.pytype/
+.dmypy.json
+dmypy.json
+
+# Testing & coverage
+.pytest_cache/
 .coverage
 .coverage.*
 htmlcov/
 .tox/
 .nox/
-.pytest_cache/
 .hypothesis/
 *.cover
 
-# IDE and Editor
+# ── Node / Next.js ───────────────────────────────────────────────────────────
+node_modules/
+.pnp
+.pnp.*
+
+# Yarn Berry
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# Next.js build output
+.next/
+out/
+
+# TypeScript incremental compilation
+*.tsbuildinfo
+
+# Test coverage
+coverage/
+
+# Debug logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# ── Deployment ───────────────────────────────────────────────────────────────
+.vercel
+
+# ── Database ─────────────────────────────────────────────────────────────────
+*.db
+*.sqlite
+*.sqlite3
+
+# ── Logs ─────────────────────────────────────────────────────────────────────
+*.log
+logs/
+
+# ── Secrets & Certificates ───────────────────────────────────────────────────
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+
+# ── OS ───────────────────────────────────────────────────────────────────────
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# ── Editors & IDEs ───────────────────────────────────────────────────────────
 .vscode/
 .idea/
 *.swp
@@ -58,51 +124,7 @@ htmlcov/
 .pydevproject
 .settings/
 
-# OS
-Thumbs.db
-.DS_Store
-.AppleDouble
-.LSOverride
-.Spotlight-V100
-.Trashes
-ehthumbs.db
-._*
-
-# Database
-*.db
-*.sqlite
-*.sqlite3
-database.db
-database.sqlite3
-
-# Logs
-*.log
-logs/
-
-# Temporary files
+# ── Temporary Files ──────────────────────────────────────────────────────────
 *.tmp
 *.bak
-*~
 .tmp/
-
-# Node (if applicable in frontend)
-node_modules/
-npm-debug.log
-yarn-error.log
-.next/
-
-# Build
-dist/
-build/
-
-
-# Credentials & Secrets
-*.pem
-*.key
-*.crt
-
-# Testing data (uncomment if needed)
-# test_*.csv
-
-# Migrations versions (uncomment if needed)
-# backend/migrations/versions/
