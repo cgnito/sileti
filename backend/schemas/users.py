@@ -1,7 +1,7 @@
 from typing import Optional
 from pydantic import BaseModel, EmailStr, Field, field_validator
 from uuid import UUID
-from services import utils
+from core import strings as utils
 
 class UserCreate(BaseModel):
     # schema for adding internal staff members

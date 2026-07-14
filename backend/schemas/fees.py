@@ -5,7 +5,7 @@ from typing import Optional
 from uuid import UUID
 from pydantic import BaseModel, Field, field_validator
 
-from services import utils
+from core import strings as utils
 
 # FEE LINE ITEM SCHEMAS
 

@@ -9,8 +9,9 @@ from decimal import Decimal
 
 from app import models, security
 from services import utils
+from services.utils import send_verification_email_background_task
 import schemas
-from . import payments  
+from services import nomba
 from app.database import get_db
 from services import notifications
 
@@ -64,15 +65,6 @@ def _extract_lookup_account_name(response_data: dict, fallback: str = "unknown m
     return fallback
 
 
-def send_verification_email_task(email: str, token: str):
-    # background wrapper for non-blocking email deployment
-    try:
-        utils.send_verification_email(email, token)
-        logger.info(f"successfully sent verification email to {email}")
-    except Exception as e:
-        logger.error(f"failed to send verification email to {email}: {str(e)}")
-
-
 # -- ROUTE ENDPOINTS -- #
 @router.post("", status_code=status.HTTP_201_CREATED)
 def register_school(
@@ -122,7 +114,7 @@ def register_school(
 
     # non-blocking verification token transmission
     token = security.create_verification_token(new_org.school_email)
-    background_tasks.add_task(send_verification_email_task, new_org.school_email, token)
+    background_tasks.add_task(send_verification_email_background_task, new_org.school_email, token)
 
     return {
         "message": "school registration successful. verification email sent.",
@@ -546,7 +538,7 @@ def get_supported_banks(
     proxies supported banks list directly from the nomba api to populate frontend dropdown grids.
     """
     try:
-        response_data = payments.make_nomba_request(method="GET", endpoint="v1/transfers/banks")
+        response_data = nomba.make_nomba_request(method="GET", endpoint="v1/transfers/banks")
         mapped = _normalize_nomba_bank_list(response_data)
         return mapped
     except Exception as e:
@@ -576,7 +568,7 @@ def verify_bank_account_name(
             "bankCode": lookup_input.bank_code
         }
         
-        response_data = payments.make_nomba_request(
+        response_data = nomba.make_nomba_request(
             method="POST",
             endpoint="v1/transfers/bank/lookup",
             payload=payload
@@ -685,7 +677,7 @@ def update_bank_settlement(
                 "bankCode": new_bank
             }
             # hit nomba API sandbox to run verification check routine
-            response_data = payments.make_nomba_request(
+            response_data = nomba.make_nomba_request(
                 method="POST",
                 endpoint="v1/transfers/bank/lookup",
                 payload=payload,

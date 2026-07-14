@@ -7,7 +7,6 @@ from decimal import Decimal
 from typing import Iterable
 from uuid import UUID
 
-from dotenv import load_dotenv
 from sqlalchemy import and_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import joinedload, selectinload
@@ -16,29 +15,30 @@ from twilio.rest import Client
 
 from app import models
 from app.database import SessionLocal
-from .email_templates import build_invoice_generated_email, build_payment_received_email
+from app.config import get_settings
+from .email_templates import (
+    _format_currency,
+    build_invoice_generated_email,
+    build_payment_received_email,
+)
 from . import utils
-
-load_dotenv()
 
 logger = logging.getLogger(__name__)
 
-TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID")
-TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN")
-TWILIO_WHATSAPP_FROM = os.getenv("TWILIO_WHATSAPP_FROM")
-TWILIO_WHATSAPP_INVOICE_GENERATED_CONTENT_SID = os.getenv("TWILIO_WHATSAPP_INVOICE_GENERATED_CONTENT_SID")
-TWILIO_WHATSAPP_PAYMENT_RECEIVED_CONTENT_SID = os.getenv("TWILIO_WHATSAPP_PAYMENT_RECEIVED_CONTENT_SID")
-CHATBOT_PHONE_NUMBER = os.getenv("CHATBOT_PHONE_NUMBER", "").strip()
+_s = get_settings()
+TWILIO_ACCOUNT_SID = _s.twilio_account_sid or os.getenv("TWILIO_ACCOUNT_SID")
+TWILIO_AUTH_TOKEN = _s.twilio_auth_token or os.getenv("TWILIO_AUTH_TOKEN")
+TWILIO_WHATSAPP_FROM = _s.twilio_whatsapp_from or os.getenv("TWILIO_WHATSAPP_FROM")
+TWILIO_WHATSAPP_INVOICE_GENERATED_CONTENT_SID = (
+    _s.twilio_whatsapp_invoice_generated_content_sid
+    or os.getenv("TWILIO_WHATSAPP_INVOICE_GENERATED_CONTENT_SID")
+)
+TWILIO_WHATSAPP_PAYMENT_RECEIVED_CONTENT_SID = (
+    _s.twilio_whatsapp_payment_received_content_sid
+    or os.getenv("TWILIO_WHATSAPP_PAYMENT_RECEIVED_CONTENT_SID")
+)
+CHATBOT_PHONE_NUMBER = (_s.chatbot_phone_number or os.getenv("CHATBOT_PHONE_NUMBER", "")).strip()
 EMAIL_FROM_ADDRESS = "ṣilẹti App <onboarding@resend.dev>"
-
-
-def _format_currency(value: Decimal | float | int | None) -> str:
-    if value is None:
-        return "0.00"
-    try:
-        return f"{Decimal(str(value)):.2f}"
-    except Exception:
-        return "0.00"
 
 
 def _normalize_whatsapp_address(phone: str | None) -> str | None:

@@ -127,7 +127,7 @@ class NombaWebhookTests(unittest.TestCase):
         timestamp = "2026-02-06T10:21:56Z"
         signature = self._make_signature(payload, timestamp)
 
-        with patch("routes.webhooks.payments.verify_transaction_by_id") as mock_verify:
+        with patch("routes.webhooks.nomba.verify_transaction_by_id") as mock_verify:
             mock_verify.return_value = {
                 "status": "SUCCESS",
                 "orderReference": order_ref,
@@ -173,7 +173,7 @@ class NombaWebhookTests(unittest.TestCase):
         timestamp = "2026-02-06T10:21:56Z"
         signature = self._make_signature(payload, timestamp)
 
-        with patch("routes.webhooks.payments.verify_transaction_by_id") as mock_verify:
+        with patch("routes.webhooks.nomba.verify_transaction_by_id") as mock_verify:
             mock_verify.return_value = {
                 "status": "SUCCESS",
                 "orderReference": order_ref,
@@ -212,7 +212,7 @@ class NombaWebhookTests(unittest.TestCase):
         first_signature = self._make_signature(first_payload, timestamp)
         second_signature = self._make_signature(second_payload, timestamp)
 
-        with patch("routes.webhooks.payments.verify_transaction_by_id") as mock_verify:
+        with patch("routes.webhooks.nomba.verify_transaction_by_id") as mock_verify:
             mock_verify.return_value = {
                 "status": "SUCCESS",
                 "orderReference": order_ref,

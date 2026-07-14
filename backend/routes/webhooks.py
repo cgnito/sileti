@@ -10,7 +10,7 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException, Depends, Header
 from fastapi import Request
 from sqlalchemy.orm import Session
 
-from . import payments
+from services import nomba
 from app.database import get_db
 from app.models import Invoice, InvoiceStatus, PaymentLedger, PaymentLedgerStatus, Transaction, TransactionStatus, WebhookLog
 from schemas.webhooks import WebhookPayload
@@ -237,7 +237,7 @@ async def nomba_webhook_handler(
         verification = {}
         if transaction_id:
             try:
-                verification = payments.verify_transaction_by_id(transaction_id)
+                verification = nomba.verify_transaction_by_id(transaction_id)
             except HTTPException as exc:
                 error_detail = str(exc.detail).lower()
                 if exc.status_code == 404 or "404" in error_detail or "not found" in error_detail:
@@ -249,7 +249,7 @@ async def nomba_webhook_handler(
 
         if not verification and order_ref:
             try:
-                verification = payments.verify_checkout_transaction(order_ref)
+                verification = nomba.verify_checkout_transaction(order_ref)
             except HTTPException as exc:
                 error_detail = str(exc.detail).lower()
                 if exc.status_code == 404 or "404" in error_detail or "not found" in error_detail:

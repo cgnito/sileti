@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session, selectinload, joinedload
 from app import models, security
 import schemas
 from services import notifications
-from . import payments
+from services import nomba
 from app.database import get_db
 
 router = APIRouter(prefix="/billing", tags=["Billing Engine"])
@@ -374,7 +374,7 @@ def verify_invoice_payment(
         )
 
     try:
-        verification = payments.verify_checkout_transaction(transaction.reference)
+        verification = nomba.verify_checkout_transaction(transaction.reference)
     except HTTPException as exc:
         error_detail = str(exc.detail).lower()
         if exc.status_code == status.HTTP_404_NOT_FOUND or "404" in error_detail or "not found" in error_detail:

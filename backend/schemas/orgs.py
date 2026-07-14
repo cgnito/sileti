@@ -3,7 +3,7 @@ from datetime import datetime
 from decimal import Decimal
 from pydantic import BaseModel, EmailStr, Field, field_validator
 from uuid import UUID
-from services import utils
+from core import strings as utils
 
 class OrgCreate(BaseModel):
     # school registration input parameters

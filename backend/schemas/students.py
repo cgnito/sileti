@@ -2,7 +2,7 @@ from pydantic import BaseModel, EmailStr, Field, field_validator
 from datetime import date
 from typing import Optional
 from uuid import UUID
-from services import utils
+from core import strings as utils
 
 class StudentBase(BaseModel):
     first_name: str = Field(..., min_length=2, max_length=100)

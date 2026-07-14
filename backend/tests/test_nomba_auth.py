@@ -7,7 +7,8 @@ from sqlalchemy.orm import sessionmaker
 
 from app import models
 import schemas
-from routes import orgs, payments
+from routes import orgs
+from services import nomba
 
 
 class FakeResponse:
@@ -25,10 +26,10 @@ class NombaAuthTests(unittest.TestCase):
         os.environ["NOMBA_ACCOUNT_ID"] = "11111111-1111-1111-1111-111111111111"
         os.environ["NOMBA_CLIENT_ID"] = "client-id"
         os.environ["NOMBA_CLIENT_SECRET"] = "client-secret"
-        payments._token_cache = {"access_token": None, "refresh_token": None, "expires_at": 0}
         os.environ["NOMBA_BASE_URL"] = "https://sandbox.nomba.com"
+        nomba._token_cache = {"access_token": None, "refresh_token": None, "expires_at": 0}
 
-    @patch("routes.payments.requests.post")
+    @patch("services.nomba.requests.post")
     def test_get_nomba_access_token_issues_and_caches_token(self, mock_post):
         mock_post.return_value = FakeResponse(
             200,
@@ -44,19 +45,19 @@ class NombaAuthTests(unittest.TestCase):
             },
         )
 
-        first = payments.get_nomba_access_token()
-        second = payments.get_nomba_access_token()
+        first = nomba.get_nomba_access_token()
+        second = nomba.get_nomba_access_token()
 
         self.assertEqual(first, "token-123")
         self.assertEqual(second, "token-123")
         self.assertEqual(mock_post.call_count, 1)
 
-    @patch("routes.payments.get_nomba_access_token", return_value="token-123")
-    @patch("routes.payments.requests.get")
+    @patch("services.nomba.get_nomba_access_token", return_value="token-123")
+    @patch("services.nomba.requests.get")
     def test_make_nomba_request_uses_bearer_auth_header(self, mock_get, _mock_token):
         mock_get.return_value = FakeResponse(200, {"code": "00", "data": {"ok": True}})
 
-        result = payments.make_nomba_request("GET", "/v1/test")
+        result = nomba.make_nomba_request("GET", "/v1/test")
 
         self.assertEqual(result["data"]["ok"], True)
         self.assertEqual(mock_get.call_args.kwargs["headers"]["Authorization"], "Bearer token-123")
@@ -73,10 +74,16 @@ class NombaAuthTests(unittest.TestCase):
             },
         }
 
-        self.assertEqual(orgs._normalize_nomba_bank_list(response), [{"bank_name": "Guaranty Trust Bank", "bank_code": "058"}])
-        self.assertEqual(orgs._extract_lookup_account_name({"data": {"accountName": "Ada Lovelace"}}), "Ada Lovelace")
+        self.assertEqual(
+            orgs._normalize_nomba_bank_list(response),
+            [{"bank_name": "Guaranty Trust Bank", "bank_code": "058"}],
+        )
+        self.assertEqual(
+            orgs._extract_lookup_account_name({"data": {"accountName": "Ada Lovelace"}}),
+            "Ada Lovelace",
+        )
 
-    @patch("routes.orgs.payments.make_nomba_request")
+    @patch("routes.orgs.nomba.make_nomba_request")
     def test_verify_bank_account_name_uses_v2_lookup_endpoint(self, mock_make_request):
         mock_make_request.return_value = {"data": {"accountName": "Ada Lovelace"}}
 
@@ -128,12 +135,12 @@ class NombaAuthTests(unittest.TestCase):
         self.assertIsNotNone(saved)
         self.assertEqual(saved.bank_name, "Nomba Bank")
 
-    @patch("routes.payments.make_nomba_request")
+    @patch("services.nomba.make_nomba_request")
     def test_create_checkout_order_uses_frontend_callback_url(self, mock_make_request):
         mock_make_request.return_value = {"code": "00", "data": {"checkoutLink": "https://checkout.nomba/link"}}
 
-        with patch.object(payments, "FRONTEND_URL", "https://frontend.example.com"):
-            result = payments.create_checkout_order(
+        with patch.object(nomba, "FRONTEND_URL", "https://frontend.example.com"):
+            result = nomba.create_checkout_order(
                 amount_kobo=150000,
                 order_ref="SIL-ORDER-123",
                 school_subaccount_id="sub-account-123",

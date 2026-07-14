@@ -6,21 +6,13 @@ import logging
 
 from app import models, security
 from services import utils
+from services.utils import send_verification_email_background_task
 import schemas
 from app.database import get_db
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["Authentication"])
-
-
-def send_verification_email_task(email: str, token: str):
-    # background task mapping for registration callbacks
-    try:
-        utils.send_verification_email(email, token)
-        logger.info(f"successfully resent verification email to {email}")
-    except Exception as e:
-        logger.error(f"failed to send verification email to {email}: {str(e)}")
 
 
 # email verification / registration activation (public - school organization only)
@@ -142,6 +134,6 @@ def resend_verification_email(
         )
     
     token = security.create_verification_token(org.school_email)
-    background_tasks.add_task(send_verification_email_task, org.school_email, token)
+    background_tasks.add_task(send_verification_email_background_task, org.school_email, token)
     
     return {"message": "if this email is registered, a verification link has been sent."}

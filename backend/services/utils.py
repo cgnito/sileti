@@ -1,74 +1,36 @@
+"""
+services/utils — email delivery helpers and re-exported string utilities.
+
+String functions (sanitize_text, normalize_phone_number, etc.) live in
+core/strings. They are re-exported here so legacy `from services import utils`
+call-sites continue to work without modification.
+"""
+import logging
 import os
-import re
 
 import resend
-from dotenv import load_dotenv
 
-load_dotenv()
+from app.config import get_settings
+from core.strings import (  # noqa: F401 — re-exported for callers that do utils.sanitize_text etc.
+    generate_short_code,
+    normalize_phone_number,
+    sanitize_email,
+    sanitize_short_code,
+    sanitize_text,
+)
 
-resend.api_key = os.getenv("RESEND_API_KEY")
-FRONTEND_URL = os.getenv("FRONTEND_URL", "http://127.0.0.1:3000").rstrip("/")
+logger = logging.getLogger(__name__)
 
-
-def sanitize_text(text: str) -> str:
-    if not text:
-        return text
-    return re.sub(r"\s+", " ", text.strip()).title()
-
-
-def sanitize_short_code(text: str) -> str:
-    if not text:
-        return text
-    return re.sub(r"\s+", "", text).upper()
+# Module-level FRONTEND_URL used by services/nomba.py and patched in tests.
+FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000").rstrip("/")
 
 
-def sanitize_email(email: str) -> str:
-    if not email:
-        return email
-    return email.strip().lower()
+def _get_resend_api_key() -> str:
+    return get_settings().resend_api_key
 
 
-def normalize_phone_number(phone: str | None) -> str | None:
-    """
-    Normalizes a local or international phone number into a Twilio-friendly E.164 string.
-    """
-    if not phone:
-        return None
-
-    cleaned = phone.strip().replace("whatsapp:", "")
-    cleaned = re.sub(r"[\s\-\(\)]", "", cleaned)
-    if not cleaned:
-        return None
-
-    if cleaned.startswith("+"):
-        digits = re.sub(r"\D", "", cleaned[1:])
-        return f"+{digits}" if digits else None
-
-    digits = re.sub(r"\D", "", cleaned)
-    if not digits:
-        return None
-
-    if digits.startswith("0") and len(digits) == 11:
-        return f"+234{digits[1:]}"
-
-    if digits.startswith("234") and len(digits) >= 13:
-        return f"+{digits}"
-
-    return f"+{digits}"
-
-
-def generate_short_code(name: str) -> str:
-    words = re.sub(r"[^a-zA-Z\s]", "", name).split()
-    if len(words) >= 3:
-        code = "".join([word[0] for word in words[:4]])
-    elif len(words) == 2:
-        code = words[0][:3] + words[1][0]
-    else:
-        code = words[0][:4]
-    return code.upper()
-
-
-def send_verification_email(email: str, token: str):
+def send_verification_email(email: str, token: str) -> None:
+    resend.api_key = _get_resend_api_key()
     verify_link = f"{FRONTEND_URL}/verify-email?token={token}"
     try:
         resend.Emails.send({
@@ -81,14 +43,15 @@ def send_verification_email(email: str, token: str):
                     <p>Please click the link below to verify your school's official email address:</p>
                     <a href="{verify_link}" style="background-color: #000; color: #fff; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Verify Account</a>
                 </div>
-            """
+            """,
         })
-        print(f"successfully sent verification email to {email}")
-    except Exception as e:
-        print(f"verification email route failure: {e}")
+        logger.info("Verification email sent to %s", email)
+    except Exception as exc:
+        logger.error("Verification email failed for %s: %s", email, exc)
 
 
-def send_staff_invitation_email(email: str, token: str, admin_name: str, org_name: str):
+def send_staff_invitation_email(email: str, token: str, admin_name: str, org_name: str) -> None:
+    resend.api_key = _get_resend_api_key()
     invite_link = f"{FRONTEND_URL}/set-password?token={token}"
     try:
         resend.Emails.send({
@@ -99,11 +62,19 @@ def send_staff_invitation_email(email: str, token: str, admin_name: str, org_nam
                 <div style="font-family: sans-serif; max-width: 600px; margin: auto;">
                     <h2>You've been invited!</h2>
                     <p>{admin_name} has invited you to join <strong>{org_name}</strong> as a staff member.</p>
-                    <p>Click the button below to establish your profile access password:</p>
+                    <p>Click the button below to set your password:</p>
                     <a href="{invite_link}" style="background-color: #000; color: #fff; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Set My Password</a>
                 </div>
-            """
+            """,
         })
-        print(f"successfully sent invitation email to {email}")
-    except Exception as e:
-        print(f"staff profile activation transmission failed: {e}")
+        logger.info("Invitation email sent to %s", email)
+    except Exception as exc:
+        logger.error("Invitation email failed for %s: %s", email, exc)
+
+
+def send_verification_email_background_task(email: str, token: str) -> None:
+    """Background-task-safe wrapper — catches and logs exceptions instead of raising."""
+    try:
+        send_verification_email(email, token)
+    except Exception as exc:
+        logger.error("Background verification email failed for %s: %s", email, exc)
